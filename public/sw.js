@@ -2,13 +2,14 @@
  * - App shell: cache-first (works offline once loaded).
  * - cameras.geojson: stale-while-revalidate (alerts keep working with no signal).
  * - OSRM / Open-Meteo / Nominatim: network-only (forecasts must be fresh).
- * - OSM tiles: small runtime cache of tiles you've already viewed. Bulk
- *   pre-downloading tiles is against the OSM tile usage policy, so we don't.
+ * - OpenFreeMap vector tiles/fonts/sprites: runtime cache of what you've viewed
+ *   (so areas you've ridden through still show with weak signal). No bulk download.
+ * - TomTom traffic: network-only (live data).
  */
-const VERSION = 'ridewx-v2';
+const VERSION = 'ridewx-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg', './data/cameras.geojson'];
 const TILE_CACHE = 'ridewx-tiles';
-const MAX_TILES = 400;
+const MAX_TILES = 1500;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -33,9 +34,9 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   // Live APIs: never serve stale weather/routes.
-  if (/open-meteo\.com|project-osrm\.org|nominatim\.openstreetmap\.org/.test(url.host)) return;
+  if (/open-meteo\.com|project-osrm\.org|nominatim\.openstreetmap\.org|tomtom\.com/.test(url.host)) return;
 
-  if (url.host.endsWith('tile.openstreetmap.org')) {
+  if (url.host === 'tiles.openfreemap.org' && !url.pathname.startsWith('/styles/')) {
     e.respondWith(
       caches.open(TILE_CACHE).then(async (cache) => {
         const hit = await cache.match(e.request);

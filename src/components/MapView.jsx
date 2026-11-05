@@ -1,100 +1,213 @@
 /**
- * Leaflet map driven imperatively (one map instance, layer groups updated in
- * effects). Avoids react-leaflet re-render overhead on a 1 Hz GPS stream.
+ * Vector map (MapLibre GL + OpenFreeMap – free, no key, no limits).
+ * Smooth zoom/rotate/tilt like Google Maps. While riding with "follow" on it
+ * goes heading-up with a 3D tilt, like a sat-nav; panning by hand stops following.
+ *
+ * All our overlays are GeoJSON sources. A style switch (day/night) wipes custom
+ * layers, so they are (re)added on every 'style.load' from the cached data.
  */
 import { useEffect, useRef } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { HAZARD_COLORS, HAZARD_LABELS } from '../features/routeWeather/hazard.js';
+import { trafficFlowTiles, trafficIncidentTiles } from '../services/tomtom.js';
 
-const fmtTime = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+export const MAP_STYLES = {
+  day: 'https://tiles.openfreemap.org/styles/liberty',
+  night: 'https://tiles.openfreemap.org/styles/dark',
+};
+const EMPTY = { type: 'FeatureCollection', features: [] };
 const CAM_COLOR = { speed_camera: '#ef4444', redlight_camera: '#f59e0b', buslane_camera: '#3b82f6', enforcement_zone: '#a855f7' };
+const fmtTime = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-export default function MapView({ segments, waypoints, cameras, position, activeIds, follow, focus }) {
+/** Polygon approximating a circle of radius r metres (for camera alert rings). */
+function circle(lat, lon, r, n = 48) {
+  const ring = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * 2 * Math.PI;
+    ring.push([lon + (r * Math.sin(a)) / (111320 * Math.cos((lat * Math.PI) / 180)), lat + (r * Math.cos(a)) / 111320]);
+  }
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} };
+}
+
+function wpPopup(w) {
+  const wx = w.weather;
+  return `<b>${fmtTime(w.etaUnix)} · ${(w.distM / 1000).toFixed(0)} km</b><br/>` +
+    `${HAZARD_LABELS[w.hazard.level]}${w.hazard.reasons.length ? ': ' + w.hazard.reasons.join(', ') : ''}<br/>` +
+    `${wx.temperature.toFixed(1)} °C · ${wx.precipitation.toFixed(1)} mm/h · vis ${(wx.visibility / 1000).toFixed(1)} km<br/>` +
+    `Wind ${Math.round(wx.windDirection)}° / ${Math.round(wx.windSpeed)} G${Math.round(wx.windGusts)} km/h<br/>` +
+    `Crosswind on this road ≈ ${Math.abs(w.wind.crosswind).toFixed(0)} km/h ${w.wind.side}`;
+}
+
+export default function MapView({
+  segments, waypoints, cameras, activeIds, position, follow, onUserPan, focus, theme = 'day', traffic = null,
+}) {
   const el = useRef(null);
   const map = useRef(null);
-  const layers = useRef({});
+  const marker = useRef(null);
+  const data = useRef({ route: EMPTY, wps: EMPTY, cams: EMPTY, rings: EMPTY });
+  const trafficRef = useRef(traffic);
+  const followRef = useRef(follow);
+  const panRef = useRef(onUserPan);
+  const firstFix = useRef(true);
+  trafficRef.current = traffic;
+  followRef.current = follow;
+  panRef.current = onUserPan;
 
-  // Init once
+  const syncTraffic = (m) => {
+    for (const id of ['traffic-flow', 'traffic-inc']) {
+      if (m.getLayer(id)) m.removeLayer(id);
+      if (m.getSource(id)) m.removeSource(id);
+    }
+    const key = trafficRef.current;
+    if (!key) return;
+    const before = m.getLayer('route-casing') ? 'route-casing' : undefined;
+    m.addSource('traffic-flow', { type: 'raster', tiles: [trafficFlowTiles(key)], tileSize: 256, attribution: '© TomTom' });
+    m.addLayer({ id: 'traffic-flow', type: 'raster', source: 'traffic-flow', paint: { 'raster-opacity': 0.85 } }, before);
+    m.addSource('traffic-inc', { type: 'raster', tiles: [trafficIncidentTiles(key)], tileSize: 256 });
+    m.addLayer({ id: 'traffic-inc', type: 'raster', source: 'traffic-inc' }, before);
+  };
+
+  const addOverlays = (m) => {
+    const d = data.current;
+    for (const [id, fc] of Object.entries(d)) if (!m.getSource(id)) m.addSource(id, { type: 'geojson', data: fc });
+    m.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#0b1220', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14], 'line-opacity': 0.55 } });
+    m.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 9] } });
+    m.addLayer({ id: 'wps', type: 'circle', source: 'wps',
+      paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    m.addLayer({ id: 'rings-fill', type: 'fill', source: 'rings', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.12 } });
+    m.addLayer({ id: 'rings-line', type: 'line', source: 'rings', paint: { 'line-color': '#ef4444', 'line-width': 1.5 } });
+    m.addLayer({ id: 'cams', type: 'circle', source: 'cams',
+      paint: {
+        'circle-radius': ['case', ['get', 'hot'], 9, 6],
+        'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2,
+      } });
+    syncTraffic(m);
+  };
+
+  // ── init once ──
   useEffect(() => {
-    const m = L.map(el.current, { zoomControl: false, attributionControl: true }).setView([37.98, 23.73], 11);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(m);
-    L.control.zoom({ position: 'bottomright' }).addTo(m);
-    layers.current = {
-      route: L.layerGroup().addTo(m),
-      wps: L.layerGroup().addTo(m),
-      cams: L.layerGroup().addTo(m),
-      me: L.layerGroup().addTo(m),
-    };
+    const m = new maplibregl.Map({
+      container: el.current,
+      style: MAP_STYLES[theme] || MAP_STYLES.day,
+      center: [23.73, 37.98],
+      zoom: 11,
+      attributionControl: { compact: true },
+      maxPitch: 60,
+    });
+    m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: false }), 'bottom-right');
+    m.on('style.load', () => addOverlays(m));
+    m.on('dragstart', (e) => { if (e.originalEvent) panRef.current?.(); });
+    m.on('click', 'wps', (e) => {
+      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.features[0].geometry.coordinates).setHTML(e.features[0].properties.html).addTo(m);
+    });
+    m.on('click', 'cams', (e) => {
+      new maplibregl.Popup({ closeButton: false }).setLngLat(e.features[0].geometry.coordinates).setText(e.features[0].properties.label).addTo(m);
+    });
+    for (const l of ['wps', 'cams']) {
+      m.on('mouseenter', l, () => { m.getCanvas().style.cursor = 'pointer'; });
+      m.on('mouseleave', l, () => { m.getCanvas().style.cursor = ''; });
+    }
+
+    // Position puck – chevron rotates with heading, aligned to the map.
+    const puck = document.createElement('div');
+    puck.innerHTML = `<svg viewBox="0 0 36 36" width="36" height="36">
+      <circle cx="18" cy="18" r="15" fill="#2563eb" stroke="#fff" stroke-width="3"/>
+      <path d="M18 7 L25 25 L18 21 L11 25 Z" fill="#fff"/></svg>`;
+    puck.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,.4))';
+    marker.current = new maplibregl.Marker({ element: puck, rotationAlignment: 'map', pitchAlignment: 'map' });
+
     map.current = m;
     return () => m.remove();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Route: one polyline per waypoint-to-waypoint segment, coloured by hazard
+  // ── day / night ──
+  const themeRef = useRef(theme);
   useEffect(() => {
-    const { route, wps } = layers.current;
-    route.clearLayers();
-    wps.clearLayers();
-    if (!segments?.length) return;
+    if (theme === themeRef.current) return; // initial style already set in the constructor
+    themeRef.current = theme;
+    map.current?.setStyle(MAP_STYLES[theme] || MAP_STYLES.day, { diff: false });
+  }, [theme]);
 
-    for (const s of segments) {
-      // dark casing underneath for contrast on the light OSM style
-      L.polyline(s.points.map((p) => [p.lat, p.lon]), { color: '#0f172a', weight: 9, opacity: 0.6 }).addTo(route);
-      L.polyline(s.points.map((p) => [p.lat, p.lon]), { color: HAZARD_COLORS[s.level], weight: 6 }).addTo(route);
+  // ── traffic toggle ──
+  useEffect(() => {
+    const m = map.current;
+    if (m?.isStyleLoaded()) syncTraffic(m);
+  }, [traffic]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── route + waypoints ──
+  useEffect(() => {
+    const route = {
+      type: 'FeatureCollection',
+      features: (segments || []).map((s) => ({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: s.points.map((p) => [p.lon, p.lat]) },
+        properties: { color: HAZARD_COLORS[s.level] },
+      })),
+    };
+    const wps = {
+      type: 'FeatureCollection',
+      features: (waypoints || []).map((w) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [w.lon, w.lat] },
+        properties: { color: HAZARD_COLORS[w.hazard.level], html: wpPopup(w) },
+      })),
+    };
+    data.current.route = route;
+    data.current.wps = wps;
+    const m = map.current;
+    m?.getSource('route')?.setData(route);
+    m?.getSource('wps')?.setData(wps);
+    if (m && segments?.length && !followRef.current) {
+      const b = new maplibregl.LngLatBounds();
+      segments.forEach((s) => s.points.forEach((p) => b.extend([p.lon, p.lat])));
+      m.fitBounds(b, { padding: 50, bearing: 0, pitch: 0, duration: 800 });
     }
-    for (const w of waypoints) {
-      const wx = w.weather;
-      L.circleMarker([w.lat, w.lon], { radius: 5, color: '#0f172a', weight: 2, fillColor: HAZARD_COLORS[w.hazard.level], fillOpacity: 1 })
-        .bindPopup(
-          `<b>${fmtTime(w.etaUnix)} · ${(w.distM / 1000).toFixed(0)} km</b><br/>` +
-            `${HAZARD_LABELS[w.hazard.level]}${w.hazard.reasons.length ? ': ' + w.hazard.reasons.join(', ') : ''}<br/>` +
-            `${wx.temperature.toFixed(1)} °C · ${wx.precipitation.toFixed(1)} mm/h · vis ${(wx.visibility / 1000).toFixed(1)} km<br/>` +
-            `Wind ${Math.round(wx.windDirection)}° / ${Math.round(wx.windSpeed)} G${Math.round(wx.windGusts)} km/h<br/>` +
-            `Est. crosswind on this road: ${Math.abs(w.wind.crosswind).toFixed(0)} km/h ${w.wind.side}`,
-        )
-        .addTo(wps);
-    }
-    const all = segments.flatMap((s) => s.points.map((p) => [p.lat, p.lon]));
-    map.current.fitBounds(all, { padding: [30, 30] });
   }, [segments, waypoints]);
 
-  // Cameras (redrawn when the active set changes, to show 500 m rings)
+  // ── cameras ──
   useEffect(() => {
-    const { cams } = layers.current;
-    cams.clearLayers();
-    for (const c of cameras) {
-      const hot = activeIds?.has(c.id);
-      if (hot) L.circle([c.lat, c.lon], { radius: c.alertRadius, color: '#ef4444', weight: 1, fillOpacity: 0.12 }).addTo(cams);
-      L.circleMarker([c.lat, c.lon], { radius: hot ? 8 : 5, color: '#fff', weight: 2, fillColor: CAM_COLOR[c.type] || '#ef4444', fillOpacity: 1 })
-        .bindTooltip(`${c.name || c.type}${c.maxspeed ? ` (${c.maxspeed})` : ''}`)
-        .addTo(cams);
-    }
+    const cams = {
+      type: 'FeatureCollection',
+      features: cameras.map((c) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+        properties: { color: CAM_COLOR[c.type] || '#ef4444', hot: !!activeIds?.has(c.id), label: `${c.name || c.type}${c.maxspeed ? ` (${c.maxspeed})` : ''}` },
+      })),
+    };
+    const rings = { type: 'FeatureCollection', features: cameras.filter((c) => activeIds?.has(c.id)).map((c) => circle(c.lat, c.lon, c.alertRadius)) };
+    data.current.cams = cams;
+    data.current.rings = rings;
+    map.current?.getSource('cams')?.setData(cams);
+    map.current?.getSource('rings')?.setData(rings);
   }, [cameras, activeIds]);
 
-  // Current position + heading chevron
+  // ── position / follow ──
   useEffect(() => {
-    const { me } = layers.current;
-    me.clearLayers();
-    if (!position) return;
-    const rot = position.heading ?? 0;
-    const icon = L.divIcon({
-      className: '',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-      html: `<svg viewBox="0 0 28 28" width="28" height="28" style="transform:rotate(${rot}deg)">
-               <circle cx="14" cy="14" r="12" fill="#0ea5e9" stroke="#fff" stroke-width="2"/>
-               <path d="M14 5 L20 20 L14 16 L8 20 Z" fill="#fff"/></svg>`,
-    });
-    if (position.accuracy > 20) L.circle([position.lat, position.lon], { radius: position.accuracy, weight: 0, fillOpacity: 0.1 }).addTo(me);
-    L.marker([position.lat, position.lon], { icon }).addTo(me);
-    if (follow) map.current.panTo([position.lat, position.lon], { animate: true });
-  }, [position, follow]);
+    const m = map.current;
+    if (!m || !position) return;
+    marker.current.setLngLat([position.lon, position.lat]).setRotation(position.heading ?? 0).addTo(m);
+    if (follow) {
+      m.easeTo({
+        center: [position.lon, position.lat],
+        bearing: position.heading ?? m.getBearing(), // heading-up
+        pitch: 50,
+        zoom: Math.max(m.getZoom(), 15.5),
+        // Shift the puck toward the bottom so you see more road ahead.
+        offset: [0, Math.round(m.getContainer().clientHeight * 0.22)],
+        duration: 900,
+      });
+    } else if (firstFix.current && !segments?.length) {
+      m.flyTo({ center: [position.lon, position.lat], zoom: 14 });
+    }
+    firstFix.current = false;
+  }, [position, follow]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── fly to a point on request ──
   useEffect(() => {
-    if (focus) map.current.setView([focus.lat, focus.lon], 12);
+    if (focus) map.current?.flyTo({ center: [focus.lon, focus.lat], zoom: focus.zoom || 14, bearing: 0, pitch: 0 });
   }, [focus]);
 
   return <div ref={el} className="h-full w-full" />;
