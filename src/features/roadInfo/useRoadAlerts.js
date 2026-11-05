@@ -5,9 +5,10 @@
  * Each event is announced once per ride. Uses along-route progress, so a
  * tunnel on a parallel road or behind you never triggers.
  */
+import { t, kmLabel } from '../../lib/i18n.js';
 import { useEffect, useRef, useState } from 'react';
 import { announce } from '../cameras/alertSound.js';
-import { GR } from '../../lib/voice.js';
+import { V } from '../../lib/voice.js';
 
 export const ROAD_ALERT_M = 500;
 
@@ -28,10 +29,10 @@ export function useRoadAlerts({ progress, roadInfo, riding, muted }) {
       const ahead = e.at - progress;
       if (ahead > 0 && ahead <= ROAD_ALERT_M && !done.current.has(e.id)) {
         done.current.add(e.id);
-        const lenTxt = e.len >= 1000 ? `${(e.len / 1000).toFixed(1)} kilometres` : `${Math.round(e.len / 10) * 10} metres`;
+        const lenTxt = e.len >= 1000 ? `${(e.len / 1000).toFixed(1)} ${kmLabel()}` : `${Math.round(e.len / 10) * 10} m`;
         const a = e.kind === 'tunnel'
-          ? { at: e.at, kind: 'tunnel', title: 'TUNNEL AHEAD', sub: `💡 Lights on · ${lenTxt}`, ahead, speech: GR.tunnel(e.len) }
-          : { at: e.at, kind: 'unpaved', title: 'DIRT ROAD AHEAD', sub: `🟤 Unpaved for ${lenTxt}`, ahead, speech: GR.dirt(e.len) };
+          ? { at: e.at, kind: 'tunnel', title: t('TUNNEL AHEAD'), sub: t('💡 Lights on · {len}', { len: lenTxt }), ahead, speech: V().tunnel(e.len) }
+          : { at: e.at, kind: 'unpaved', title: t('DIRT ROAD AHEAD'), sub: t('🟤 Unpaved for {len}', { len: lenTxt }), ahead, speech: V().dirt(e.len) };
         setAlert(a);
         if (!muted) announce(a.speech);
         clearTimeout(timer.current);

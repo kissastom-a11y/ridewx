@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { speedLimitAt, fetchLiveLimit } from '../../services/speedLimit.js';
 import { haversine } from '../../lib/geo.js';
-import { say, GR } from '../../lib/voice.js';
+import { say, V } from '../../lib/voice.js';
 
 export function useSpeedLimit({ riding, position, heading, progress, ranges, muted }) {
   const [live, setLive] = useState(null);
@@ -42,7 +42,7 @@ export function useSpeedLimit({ riding, position, heading, progress, ranges, mut
     const now = Date.now();
     if (w.limit !== limit.kmh || now - w.t > 45000) {
       warned.current = { limit: limit.kmh, t: now };
-      say(GR.speeding(limit.kmh), { urgent: true });
+      say(V().speeding(limit.kmh), { urgent: true });
     }
   }, [riding, over, limit?.kmh, muted]); // eslint-disable-line react-hooks/exhaustive-deps
 

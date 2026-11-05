@@ -352,3 +352,45 @@ describe('vibration', () => {
     expect(vibrationRms(gen(0.005))).toBeLessThan(ENGINE_ON_RMS);
   });
 });
+
+import { parseCommand, normalize } from '../src/features/voice/commands.js';
+
+describe('voice commands (Greek + English)', () => {
+  const places = [
+    { id: 'home', name: 'Home', lat: 38, lon: 23 },
+    { id: 'work', name: 'Work', lat: 37.9, lon: 23.7 },
+    { id: 'p1', name: 'Γυμναστήριο', lat: 38.1, lon: 23.8 },
+  ];
+  const cmd = (s) => parseCommand([s], { places });
+  it('normalises accents', () => expect(normalize('Πάμε ΣΠΊΤΙ!')).toBe('παμε σπιτι'));
+  it('saved places in both languages', () => {
+    expect(cmd('Πάμε σπίτι').place.id).toBe('home');
+    expect(cmd('πήγαινε στη δουλειά').place.id).toBe('work');
+    expect(cmd('Take me home').place.id).toBe('home');
+    expect(cmd('go to work').place.id).toBe('work');
+    expect(cmd('πάμε γυμναστήριο').place.id).toBe('p1');
+  });
+  it('navigate anywhere, keeping the original spelling for search', () => {
+    expect(cmd('Πήγαινε στην Κηφισιά')).toMatchObject({ type: 'navigate', query: 'Κηφισιά' });
+    expect(cmd('Οδήγησε με στο Σύνταγμα')).toMatchObject({ type: 'navigate', query: 'Σύνταγμα' });
+    expect(cmd('navigate to Piraeus port')).toMatchObject({ type: 'navigate', query: 'Piraeus port' });
+  });
+  it('questions and controls', () => {
+    expect(cmd('Πόση βενζίνη καίω;').type).toBe('fuel');
+    expect(cmd('Τι καιρό έχει;').type).toBe('weather');
+    expect(cmd('πόσο αέρα έχει').type).toBe('wind');
+    expect(cmd('Πότε φτάνω;').type).toBe('eta');
+    expect(cmd('πού στρίβω').type).toBe('next');
+    expect(cmd('ποιο είναι το όριο').type).toBe('limit');
+    expect(cmd('Σίγαση').type).toBe('mute');
+    expect(cmd('σταμάτα').type).toBe('stop');
+    expect(cmd('νυχτερινός χάρτης').type).toBe('night');
+    expect(cmd('show traffic').type).toBe('traffic_on');
+    expect(cmd('hide traffic').type).toBe('traffic_off');
+    expect(cmd('how much fuel am I using').type).toBe('fuel');
+    expect(cmd('blah blah').type).toBe('unknown');
+  });
+  it('falls back to the next recogniser hypothesis', () => {
+    expect(parseCommand(['πάμε σπύτι', 'πάμε σπίτι'], { places }).place.id).toBe('home');
+  });
+});

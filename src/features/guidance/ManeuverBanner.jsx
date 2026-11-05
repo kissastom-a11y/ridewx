@@ -1,4 +1,5 @@
 /** Big green "next turn" card at the top of the map, like any navigation app. */
+import { t } from '../../lib/i18n.js';
 const ANGLE = { straight: 0, 'slight right': 40, right: 90, 'sharp right': 135, 'slight left': -40, left: -90, 'sharp left': -135 };
 
 function Arrow({ m }) {
@@ -44,7 +45,7 @@ export default function ManeuverBanner({ guidance }) {
       </div>
       <div className="min-w-0">
         <div className="text-3xl font-black leading-none tabular-nums">{fmt(dist)}</div>
-        <div className="truncate text-sm font-semibold opacity-90">{next.name || (next.type === 'arrive' ? 'Destination' : '')}</div>
+        <div className="truncate text-sm font-semibold opacity-90">{next.name || (next.type === 'arrive' ? t('Destination') : '')}</div>
       </div>
     </div>
   );

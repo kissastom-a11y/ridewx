@@ -12,7 +12,7 @@
  *   now   : d ≤ clamp(v·4 s, 30 m, 120 m)   – about 4 seconds before
  * If another maneuver follows within 150 m, it's chained: "…και μετά, στρίψτε αριστερά".
  */
-import { instructionGreek, maneuverGreek } from '../../lib/voice.js';
+import { instructionText, maneuverText, V } from '../../lib/voice.js';
 
 const ACTIONABLE = new Set(['turn', 'fork', 'merge', 'on ramp', 'off ramp', 'end of road', 'roundabout', 'rotary', 'roundabout turn', 'arrive']);
 export const isActionable = (m) =>
@@ -42,7 +42,7 @@ export function guidanceStep(maneuvers, progress, speedKmh, said) {
   const prevDist = i > 0 ? next.distM - maneuvers[i - 1].distM : Infinity;
   const t = thresholds(speedKmh);
   const after = maneuvers[i + 1];
-  const chain = after && after.distM - next.distM < 150 && after.type !== 'arrive' ? `, και μετά, ${maneuverGreek(after)}` : '';
+  const chain = after && after.distM - next.distM < 150 && after.type !== 'arrive' ? `, ${V().and_then}, ${maneuverText(after)}` : '';
 
   let stage = null;
   if (dist <= t.now) stage = 'now';
@@ -56,7 +56,7 @@ export function guidanceStep(maneuvers, progress, speedKmh, said) {
   if (stage === 'near') said.add(`${i}:early`);
 
   let speech;
-  if (next.type === 'arrive') speech = stage === 'now' ? instructionGreek(next) : `Σε ${Math.round(dist / 50) * 50 >= 1000 ? (Math.round(dist / 100) / 10).toString().replace('.', ',') + ' χιλιόμετρα' : Math.round(dist / 50) * 50 + ' μέτρα'}, φτάνετε στον προορισμό σας.`;
-  else speech = instructionGreek(next, stage === 'now' ? null : dist).replace(/\.$/, '') + chain + '.';
+  if (next.type === 'arrive') speech = stage === 'now' ? instructionText(next) : V().arriveIn(dist);
+  else speech = instructionText(next, stage === 'now' ? null : dist).replace(/\.$/, '') + chain + '.';
   return { next, dist, speech, urgent: stage === 'now' };
 }

@@ -2,6 +2,7 @@
  * Feature 4 UI: 3-state engine load display + estimated consumption + fill-up calibration.
  * Settings and the fuel-since-last-fill-up counter persist in localStorage.
  */
+import { t } from '../../lib/i18n.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULTS, updateCorrection } from './engineDsp.js';
 import { useEngineAudio } from './useEngineAudio.js';
@@ -72,8 +73,8 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, k
           <div className="flex items-center gap-2">
             <span className="animate-bounce text-2xl">🧠</span>
             <div className="flex-1">
-              <div className="font-semibold">Learning your {cfg.vehicle === 'moto' ? 'bike' : 'car'}'s sound… {secsLeft}s</div>
-              <div className="text-[11px] opacity-80">Music &amp; talking off please. Idle or ride steadily.</div>
+              <div className="font-semibold">{t("Learning your {v}'s sound… {s}s", { v: t(cfg.vehicle === 'moto' ? 'bike' : 'car'), s: secsLeft })}</div>
+              <div className="text-[11px] opacity-80">{t('Music & talking off please. Idle or ride steadily.')}</div>
               <div className="mt-1 h-1.5 rounded bg-white/25"><div className="h-1.5 rounded bg-white transition-all" style={{ width: `${Math.round(snap.progress * 100)}%` }} /></div>
             </div>
           </div>
@@ -82,12 +83,12 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, k
       {on && !learning && snap?.interfering && (
         <Bubble color="#0ea5e9">
           <span className="text-xl">{snap.interferenceReason === 'self' ? '🗣️' : snap.interferenceReason === 'voice' ? '🎵' : '💨'}</span>{' '}
-          {snap.interferenceReason === 'self' ? 'App speaking – ignoring its own voice'
-            : snap.interferenceReason === 'voice' ? 'Music or voices – holding the reading' : 'Noise burst (wind/horn) – holding the reading'}
+          {t(snap.interferenceReason === 'self' ? 'App speaking – ignoring its own voice'
+            : snap.interferenceReason === 'voice' ? 'Music or voices – holding the reading' : 'Noise burst (wind/horn) – holding the reading')}
         </Bubble>
       )}
       {on && snap?.silent && (
-        <Bubble color="#f59e0b">🎙️ No sound from the microphone – check the browser's mic permission.</Bubble>
+        <Bubble color="#f59e0b">{t("🎙️ No sound from the microphone – check the browser's mic permission.")}</Bubble>
       )}
       <div className="flex items-center gap-3">
         <div
@@ -95,23 +96,23 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, k
           style={{ borderColor: st?.color || '#475569', background: st ? `${st.color}22` : 'transparent' }}
         >
           <span className="text-sm font-black" style={{ color: st?.color || '#94a3b8' }}>
-            {!on ? 'OFF' : learning ? 'LEARN' : snap?.calibrating ? 'CAL…' : st?.label}
+            {!on ? t('OFF') : learning ? t('LEARN') : snap?.calibrating ? 'CAL…' : t(st?.label)}
           </span>
           {on && snap && <span className="text-[10px] text-slate-400">+{snap.loadDb.toFixed(1)} dB</span>}
         </div>
 
         <div className="min-w-0 flex-1 text-xs">
-          {on && !learning && snap?.calibrating && <p className="text-slate-400">New speed – fine-tuning for ~5 s…</p>}
+          {on && !learning && snap?.calibrating && <p className="text-slate-400">{t('New speed – fine-tuning for ~5 s…')}</p>}
           {on && snap && (
             <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-500">
               🎙️<div className="h-1 flex-1 rounded bg-slate-700"><div className="h-1 rounded bg-emerald-500" style={{ width: `${Math.max(0, Math.min(100, (snap.micDb + 100) * 1.4))}%` }} /></div>
             </div>
           )}
-          {on && st && <p className="font-semibold" style={{ color: st.color }}>{st.sub}</p>}
+          {on && st && <p className="font-semibold" style={{ color: st.color }}>{t(st.sub)}</p>}
           <div className="mt-1 h-2 rounded bg-slate-700">
             <div className="h-2 rounded transition-all" style={{ width: `${Math.min(100, ((snap?.loadDb || 0) / 15) * 100)}%`, background: st?.color || '#64748b' }} />
           </div>
-          {!cfg.showFuel && on && st && <p className="mt-1 text-[11px] text-slate-400">Engine load from sound – relative to your normal cruising.</p>}
+          {!cfg.showFuel && on && st && <p className="mt-1 text-[11px] text-slate-400">{t('Engine load from sound – relative to your normal cruising.')}</p>}
           {false && <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
             <div><dt className="text-slate-400">Now (est.)</dt>
               <dd className="font-semibold tabular-nums text-slate-100">
@@ -132,7 +133,7 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, k
 
       <div className="flex gap-2">
         <button onClick={() => (on ? stop() : begin(false))} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${on ? 'bg-slate-700' : 'bg-violet-600'}`}>
-          {on ? 'Stop engine monitor' : status === 'starting' ? 'Starting…' : cfg.profile ? '🎙 Start engine monitor' : '🎙 Start – learn my engine (1 min)'}
+          {t(on ? 'Stop engine monitor' : status === 'starting' ? 'Starting…' : cfg.profile ? '🎙 Start engine monitor' : '🎙 Start – learn my engine (1 min)')}
         </button>
         <button onClick={() => setShowSettings((s) => !s)} className="rounded-lg bg-slate-700 px-3 text-sm">⚙</button>
       </div>
@@ -140,11 +141,10 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, k
       {showSettings && (
         <div className="space-y-2 rounded-lg bg-slate-900/60 p-2 text-xs text-slate-300">
           <div className="flex items-center justify-between">
-            <span>Engine sound profile: {cfg.profile ? `learned ${new Date(cfg.profile.learnedAt).toLocaleDateString()}` : 'not learned yet'}</span>
-            <button disabled={on} onClick={() => begin(true)} className="rounded bg-violet-700 px-2 py-1 disabled:opacity-50">Re-learn</button>
+            <span>{t('Engine sound profile: {s}', { s: cfg.profile ? t('learned {d}', { d: new Date(cfg.profile.learnedAt).toLocaleDateString() }) : t('not learned yet') })}</span>
+            <button disabled={on} onClick={() => begin(true)} className="rounded bg-violet-700 px-2 py-1 disabled:opacity-50">{t('Re-learn')}</button>
           </div>
-          <p className="text-slate-500">Audio is analysed on the phone and never recorded or uploaded. Best placement: car – dash/console mount;
-            motorcycle – tank bag or jacket pocket (out of the wind).</p>
+          <p className="text-slate-500">{t('Audio is analysed on the phone and never recorded or uploaded. Best placement: car – dash/console mount; motorcycle – tank bag or jacket pocket (out of the wind).')}</p>
         </div>
       )}
     </div>

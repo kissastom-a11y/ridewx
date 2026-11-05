@@ -13,6 +13,7 @@
  * thickness grows with wind speed; colour = crosswind severity (green/orange/red),
  * graded on the stronger of the steady and gust crosswind components.
  */
+import { t } from '../../lib/i18n.js';
 import { useEffect, useRef, useState } from 'react';
 import { analyzeWind } from '../../lib/wind.js';
 import { normalize180 } from '../../lib/geo.js';
@@ -61,9 +62,9 @@ export default function WindEdges({ wind, heading, screenUp }) {
   const cy = (mTop + (h - mBot)) / 2;
   const halfW = (w - mL - mR) / 2;
   const halfH = (h - mBot - mTop) / 2;
-  const t = Math.min(Math.abs(dx) > 1e-3 ? halfW / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-3 ? halfH / Math.abs(dy) : Infinity);
-  const pin = { x: cx + t * dx, y: cy + t * dy };
-  const pout = { x: cx - t * dx, y: cy - t * dy };
+  const reach = Math.min(Math.abs(dx) > 1e-3 ? halfW / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-3 ? halfH / Math.abs(dy) : Infinity);
+  const pin = { x: cx + reach * dx, y: cy + reach * dy };
+  const pout = { x: cx - reach * dx, y: cy - reach * dy };
   // The arrow is drawn pointing DOWN (screen bearing 180°); rotating it by θs
   // makes it point along the air's travel (θs + 180°). Clockwise = positive.
   const rot = θs;
@@ -77,9 +78,9 @@ export default function WindEdges({ wind, heading, screenUp }) {
       <Arrow x={pin.x} y={pin.y} angle={rot} color={color} width={width} />
       <Arrow x={pout.x} y={pout.y} angle={rot} color={color} width={width} len={56} />
       <div className="absolute rounded-lg bg-slate-900/80 px-2 py-1 text-[11px] font-bold leading-tight text-white shadow" style={{ left: lx, top: ly }}>
-        <div>💨 {Math.round(wind.speed)} <span className="opacity-70">G{Math.round(wind.gusts)}</span> km/h</div>
+        <div>💨 {Math.round(wind.speed)} <span className="opacity-70">G{Math.round(wind.gusts)}</span> {t('km/h')}</div>
         <div style={{ color }}>
-          {a.quadrant === 'head' ? `⬇ head ${Math.round(a.headwind)}` : a.quadrant === 'tail' ? `⬆ tail ${Math.round(-a.headwind)}` : `↔ side ${Math.round(Math.abs(a.gustCross))}`}
+          {a.quadrant === 'head' ? `⬇ ${t('head')} ${Math.round(a.headwind)}` : a.quadrant === 'tail' ? `⬆ ${t('tail')} ${Math.round(-a.headwind)}` : `↔ ${t('side')} ${Math.round(Math.abs(a.gustCross))}`}
         </div>
       </div>
     </div>

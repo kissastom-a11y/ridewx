@@ -18,8 +18,11 @@
  * cut in front; routine ones wait. `isSpeaking()` lets the engine-sound monitor
  * ignore the app's own voice.
  */
-const FEMALE = /melina|μελίνα|athina|αθηνά|female|γυναίκα|el-gr-x-.*#female|elf|-f-/i;
-const MALE = /nikos|νίκος|stefanos|στέφανος|male(?!.*female)/i;
+import { lang } from './i18n.js';
+
+// Known female / male system voices (iOS, Android/Google, Windows/Edge).
+const FEMALE = /melina|μελίνα|athina|αθηνά|samantha|karen|serena|moira|tessa|victoria|fiona|kate|zira|aria|jenny|libby|sonia|hazel|susan|female|γυναίκα|#female|-f-/i;
+const MALE = /nikos|νίκος|stefanos|στέφανος|daniel|alex|fred|david|mark|guy|ryan|george|oliver|thomas|arthur|male(?!.*female)/i;
 
 let chosen = null;
 let enabled = true;
@@ -29,8 +32,10 @@ const queue = [];
 function pickVoice() {
   if (!('speechSynthesis' in window)) return null;
   const voices = window.speechSynthesis.getVoices();
-  const greek = voices.filter((v) => /^el(-|_|$)/i.test(v.lang));
-  return greek.find((v) => FEMALE.test(v.name)) || greek.find((v) => !MALE.test(v.name)) || greek[0] || null;
+  const re = lang() === 'el' ? /^el(-|_|$)/i : /^en(-|_|$)/i;
+  const mine = voices.filter((v) => re.test(v.lang));
+  // English: prefer British/US voices in that order after the female check.
+  return mine.find((v) => FEMALE.test(v.name)) || mine.find((v) => !MALE.test(v.name)) || mine[0] || null;
 }
 
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -52,7 +57,7 @@ function next() {
   const u = new SpeechSynthesisUtterance(text);
   chosen = chosen || pickVoice();
   if (chosen) u.voice = chosen;
-  u.lang = 'el-GR';
+  u.lang = lang() === 'el' ? 'el-GR' : 'en-GB';
   u.rate = 0.98;
   u.pitch = 1.12;
   u.volume = 1;
@@ -68,8 +73,8 @@ function next() {
  * @param {string} text
  * @param {{urgent?: boolean}} opts urgent = jump the queue and interrupt routine speech
  */
-export function say(text, { urgent = false } = {}) {
-  if (!enabled || !text || !('speechSynthesis' in window)) return;
+export function say(text, { urgent = false, force = false } = {}) {
+  if ((!enabled && !force) || !text || !('speechSynthesis' in window)) return;
   if (urgent) {
     queue.length = 0;
     if (speaking) { window.speechSynthesis.cancel(); speaking = false; }
@@ -154,6 +159,60 @@ export function instructionGreek(m, distM) {
   return `Σε ${distGreek(distM)}, ${core}.`;
 }
 
+// ─────────────────────────── English phrasing ───────────────────────────
+
+export function distEnglish(m) {
+  if (m < 1000) {
+    const r = m < 100 ? Math.round(m / 10) * 10 : Math.round(m / 50) * 50;
+    return `${r} metres`;
+  }
+  const km = Math.round(m / 100) / 10;
+  return km === 1 ? '1 kilometre' : `${km} kilometres`;
+}
+
+const ORD_EN = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
+const DIR_EN = {
+  uturn: 'make a U-turn', 'sharp right': 'turn sharp right', right: 'turn right', 'slight right': 'keep right',
+  straight: 'continue straight', 'slight left': 'keep left', left: 'turn left', 'sharp left': 'turn sharp left',
+};
+const SIDE_EN = (mod) => (mod && mod.includes('left') ? 'left' : 'right');
+
+export function maneuverEnglish(m) {
+  const to = m.name ? ` onto ${m.name}` : '';
+  switch (m.type) {
+    case 'depart': return `Let's go${m.name ? ` along ${m.name}` : ''}. Have a good trip!`;
+    case 'arrive': return 'You have arrived at your destination. Enjoy!';
+    case 'roundabout':
+    case 'rotary':
+      return m.exit ? `at the roundabout, take the ${ORD_EN[m.exit - 1] || `${m.exit}th`} exit${to}` : `enter the roundabout${to}`;
+    case 'exit roundabout':
+    case 'exit rotary': return `exit the roundabout${to}`;
+    case 'fork': return `at the fork, keep ${SIDE_EN(m.modifier)}${to}`;
+    case 'merge': return `merge ${SIDE_EN(m.modifier)}${to}`;
+    case 'on ramp': return `take the ramp on the ${SIDE_EN(m.modifier)}${to}`;
+    case 'off ramp': return `take the exit on the ${SIDE_EN(m.modifier)}${to}`;
+    case 'end of road': return `at the end of the road, ${DIR_EN[m.modifier] || 'turn'}${to}`;
+    case 'continue':
+    case 'new name':
+      return m.modifier && m.modifier !== 'straight' ? `${DIR_EN[m.modifier]}${to}` : `continue straight${to}`;
+    default: return `${DIR_EN[m.modifier] || 'continue'}${to}`;
+  }
+}
+
+export function instructionEnglish(m, distM) {
+  const core = maneuverEnglish(m);
+  if (m.type === 'arrive' || m.type === 'depart') return core;
+  const cap = core.charAt(0).toUpperCase() + core.slice(1);
+  if (distM == null || distM < 40) return `${cap}.`;
+  return `In ${distEnglish(distM)}, ${core}.`;
+}
+
+// ─────────────────────────── language switch ───────────────────────────
+
+export const distText = (m) => (lang() === 'el' ? distGreek(m) : distEnglish(m));
+export const maneuverText = (m) => (lang() === 'el' ? maneuverGreek(m) : maneuverEnglish(m));
+export const instructionText = (m, d) => (lang() === 'el' ? instructionGreek(m, d) : instructionEnglish(m, d));
+
 /** Ready-made Greek alert sentences. */
 export const GR = {
   camera: (dist, limit) => `Κάμερα ταχύτητας σε ${distGreek(dist)}${limit ? `. Όριο ${limit}` : ''}.`,
@@ -166,3 +225,23 @@ export const GR = {
   engineLearning: 'Μαθαίνω τον ήχο του κινητήρα, για ένα λεπτό.',
   engineReady: 'Έμαθα τον ήχο του κινητήρα.',
 };
+
+/** Ready-made English alert sentences. */
+export const EN = {
+  camera: (dist, limit) => `Speed camera in ${distEnglish(dist)}${limit ? `. Limit ${limit}` : ''}.`,
+  tunnel: (len) => `Tunnel in 500 metres, ${distEnglish(len)} long. Lights on, please.`,
+  dirt: (len) => `Dirt road in 500 metres, for ${distEnglish(len)}.`,
+  speeding: (limit) => `Careful, the limit is ${limit}.`,
+  crosswind: (side, kmh) => `Strong crosswind from the ${side}, ${Math.round(kmh)} kilometres an hour.`,
+  rerouting: 'Finding a new route.',
+  rideStart: "Let's go! I'll keep you posted along the way.",
+  engineLearning: "I'm learning your engine's sound, for about a minute.",
+  engineReady: "Got it, I've learned your engine's sound.",
+  and_then: 'and then',
+  arriveIn: (d) => `In ${distEnglish(d)}, you'll reach your destination.`,
+};
+GR.and_then = 'και μετά';
+GR.arriveIn = (d) => `Σε ${distGreek(d)}, φτάνετε στον προορισμό σας.`;
+
+/** Phrases in the chosen language: V().tunnel(len) */
+export const V = () => (lang() === 'el' ? GR : EN);

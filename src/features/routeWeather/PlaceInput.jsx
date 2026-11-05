@@ -5,10 +5,11 @@
  *   🕘 recent destinations        (filtered by what you type)
  *   🔍 Search "…"                 (keep the typed text → geocoded on Go)
  */
+import { t } from '../../lib/i18n.js';
 import { useState } from 'react';
 
 export const ME = { isMe: true, icon: '📍', name: 'My location' };
-const show = (v) => (v && typeof v === 'object' ? `${v.icon || '📍'} ${v.name}` : v || '');
+const show = (v) => (v && typeof v === 'object' ? `${v.icon || '📍'} ${t(v.name)}` : v || '');
 
 export default function PlaceInput({ value, onChange, placeholder, places = [], recents = [], className = '' }) {
   const [open, setOpen] = useState(false);
@@ -39,13 +40,13 @@ export default function PlaceInput({ value, onChange, placeholder, places = [], 
         onChange={(e) => { onChange(e.target.value); setOpen(true); }} />
       {open && (
         <div className="mt-1 max-h-64 overflow-y-auto rounded-xl bg-slate-800 shadow-xl ring-1 ring-slate-600">
-          <Item icon="📍" label="My current location" strong onPick={() => pick(ME)} />
-          {saved.map((p) => <Item key={p.id} icon={p.icon} label={p.name} sub={p.label} onPick={() => pick(p)} />)}
+          <Item icon="📍" label={t('My current location')} strong onPick={() => pick(ME)} />
+          {saved.map((p) => <Item key={p.id} icon={p.icon} label={t(p.name)} sub={p.label} onPick={() => pick(p)} />)}
           {recent.map((r) => (
             <Item key={r.ts} icon="🕘" label={r.name} sub={r.label}
               onPick={() => pick({ icon: '🕘', name: r.name, lat: r.lat, lon: r.lon, label: r.label })} />
           ))}
-          {text && <Item icon="🔍" label={`Search “${value.trim()}”`} onPick={() => setOpen(false)} />}
+          {text && <Item icon="🔍" label={t('Search “{q}”', { q: value.trim() })} onPick={() => setOpen(false)} />}
         </div>
       )}
     </div>

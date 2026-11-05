@@ -5,6 +5,7 @@
  *   - elevation profile with hazard colours, wind arrows above each point and
  *     a dot for where you are now
  */
+import { t } from '../../lib/i18n.js';
 import { useMemo } from 'react';
 import { haversine } from '../../lib/geo.js';
 import { HAZARD_COLORS } from './hazard.js';
@@ -43,17 +44,17 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
   const progress = progressM ?? fallbackProgress;
 
   if (!route || !waypoints?.length) {
-    return <p className="rounded-xl bg-slate-800/60 p-3 text-xs text-slate-400">Plan a route to see weather and wind on the road ahead.</p>;
+    return <p className="rounded-xl bg-slate-800/60 p-3 text-xs text-slate-400">{t('Plan a route to see weather and wind on the road ahead.')}</p>;
   }
 
   // "Next up": everything worth a glance, in road order.
   const from = progress ?? -1;
-  const fmtIn = (d) => (progress == null ? `km ${(d / 1000).toFixed(0)}` : d - progress < 1000 ? `${Math.max(0, Math.round((d - progress) / 50) * 50)} m` : `${((d - progress) / 1000).toFixed(1)} km`);
+  const fmtIn = (d) => (progress == null ? `${t('km')} ${(d / 1000).toFixed(0)}` : d - progress < 1000 ? `${Math.max(0, Math.round((d - progress) / 50) * 50)} m` : `${((d - progress) / 1000).toFixed(1)} ${t('km')}`);
   const events = [
-    ...routeCameras.map((c) => ({ d: c.distM, icon: '📷', text: c.maxspeed ? `Camera · ${c.maxspeed}` : 'Camera', tone: '#fca5a5' })),
-    ...(roadInfo?.tunnels || []).map((t) => ({ d: t.from, icon: '🚇', text: `Tunnel ${t.lengthM >= 1000 ? (t.lengthM / 1000).toFixed(1) + ' km' : Math.round(t.lengthM) + ' m'} · lights`, tone: '#fde68a' })),
-    ...(roadInfo?.unpaved || []).map((u) => ({ d: u.from, icon: '🟤', text: `Dirt ${(u.lengthM / 1000).toFixed(1)} km`, tone: '#fcd34d' })),
-    ...spots.map((sp) => ({ d: sp.distM, icon: '⛰', text: `Crest · gusts ${sp.gusts}`, tone: sp.gusts >= 60 ? '#f87171' : '#fdba74' })),
+    ...routeCameras.map((c) => ({ d: c.distM, icon: '📷', text: c.maxspeed ? `${t('Camera')} · ${c.maxspeed}` : t('Camera'), tone: '#fca5a5' })),
+    ...(roadInfo?.tunnels || []).map((tu) => ({ d: tu.from, icon: '🚇', text: `${t('Tunnel')} ${tu.lengthM >= 1000 ? (tu.lengthM / 1000).toFixed(1) + ' ' + t('km') : Math.round(tu.lengthM) + ' m'} · ${t('lights')}`, tone: '#fde68a' })),
+    ...(roadInfo?.unpaved || []).map((u) => ({ d: u.from, icon: '🟤', text: `${t('Dirt')} ${(u.lengthM / 1000).toFixed(1)} ${t('km')}`, tone: '#fcd34d' })),
+    ...spots.map((sp) => ({ d: sp.distM, icon: '⛰', text: `${t('Crest')} · ${t('gusts')} ${sp.gusts}`, tone: sp.gusts >= 60 ? '#f87171' : '#fdba74' })),
   ].filter((e) => e.d >= from).sort((a, b) => a.d - b.d).slice(0, 4);
 
   const ahead = waypoints.filter((w) => progress == null || w.distM >= progress - 500);
@@ -80,8 +81,8 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
   return (
     <div className="space-y-2 rounded-xl bg-slate-800/80 p-3">
       <div className="flex justify-between text-[11px] uppercase tracking-wide text-slate-500">
-        <span>Road ahead</span>
-        {progress != null && <span>{((total - progress) / 1000).toFixed(0)} km to go</span>}
+        <span>{t('Road ahead')}</span>
+        {progress != null && <span>{t('{n} km to go', { n: ((total - progress) / 1000).toFixed(0) })}</span>}
       </div>
 
       {events.length > 0 && (
@@ -103,13 +104,13 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
           <div key={i} className="flex w-[68px] shrink-0 flex-col items-center rounded-lg bg-slate-900/70 py-1.5 text-[11px]"
             style={{ borderTop: `4px solid ${HAZARD_COLORS[w.hazard.level]}` }}>
             <span className="tabular-nums text-slate-400">
-              {progress == null ? fmtTime(w.etaUnix) : w.distM - progress < 600 ? 'now' : `${((w.distM - progress) / 1000).toFixed(0)} km`}
+              {progress == null ? fmtTime(w.etaUnix) : w.distM - progress < 600 ? t('now') : `${((w.distM - progress) / 1000).toFixed(0)} ${t('km')}`}
             </span>
             <span className="text-xl leading-tight">{weatherIcon(w.weather.weatherCode, w.etaUnix)}</span>
             <span className="font-semibold text-white">{Math.round(w.weather.temperature)}°</span>
             <WindGlyph rel={w.wind.relAngle} color={SEV[w.wind.severity]} speed={w.weather.windSpeed} />
             <span className="tabular-nums" style={{ color: SEV[w.wind.severity] }}>
-              {Math.abs(w.wind.crosswind).toFixed(0)} {w.wind.side === 'right' ? 'R' : 'L'}
+              {Math.abs(w.wind.crosswind).toFixed(0)} {t(w.wind.side === 'right' ? 'R' : 'L')}
             </span>
             {w.exposure?.exposed && <span title="Exposed high ground">⛰ +{Math.round((w.exposure.factor - 1) * 100)}%</span>}
           </div>
@@ -118,8 +119,10 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
 
       {spots.filter((sp) => progress == null || sp.distM >= progress).map((sp, i) => (
         <p key={i} className="text-xs" style={{ color: sp.gusts >= 60 ? '#dc2626' : sp.gusts >= 40 ? '#f97316' : '#cbd5e1' }}>
-          ⛰ Exposed crest {progress == null ? `at km ${(sp.distM / 1000).toFixed(0)}` : `in ${((sp.distM - progress) / 1000).toFixed(0)} km`}
-          {' '}({Math.round(sp.elev)} m): wind ≈ {sp.wind} km/h, gusts {sp.gusts}
+          ⛰ {t('Exposed crest {where} ({elev} m): wind ≈ {w} km/h, gusts {g}', {
+            where: progress == null ? t('at km {n}', { n: (sp.distM / 1000).toFixed(0) }) : t('in {n} km', { n: ((sp.distM - progress) / 1000).toFixed(0) }),
+            elev: Math.round(sp.elev), w: sp.wind, g: sp.gusts,
+          })}
         </p>
       ))}
       {pts.length > 1 && (
@@ -158,11 +161,11 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
               return <circle cx={x(progress)} cy={y(near.elev)} r="5" fill="#2563eb" stroke="#fff" strokeWidth="2" />;
             })()}
             <text x="2" y={H + 10} fontSize="9" fill="#64748b">{Math.round(minE)}–{Math.round(maxE)} m</text>
-            <text x={W - 2} y={H + 10} fontSize="9" fill="#64748b" textAnchor="end">↗ {Math.round(climb)} m climb</text>
+            <text x={W - 2} y={H + 10} fontSize="9" fill="#64748b" textAnchor="end">↗ {Math.round(climb)} m {t('climb')}</text>
           </svg>
         </div>
       )}
-      <p className="text-[10px] text-slate-500">Arrows: where the wind hits you from, with your direction of travel pointing up. ⛰ = exposed ridge/pass, wind boosted.</p>
+      <p className="text-[10px] text-slate-500">{t('Arrows: where the wind hits you from, with your direction of travel pointing up. ⛰ = exposed ridge/pass, wind boosted.')}</p>
     </div>
   );
 }

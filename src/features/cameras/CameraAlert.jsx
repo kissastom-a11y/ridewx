@@ -1,3 +1,4 @@
+import { t } from '../../lib/i18n.js';
 import { ALERT_RADIUS_M } from './cameraEngine.js';
 
 const LABEL = {
@@ -24,7 +25,7 @@ export default function CameraAlert({ active }) {
           <div className="text-4xl">📷</div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold tracking-widest">{LABEL[cam.type] || 'CAMERA'}</div>
+          <div className="text-xs font-bold tracking-widest">{t(LABEL[cam.type] || 'SPEED CAMERA')}</div>
           <div className="text-3xl font-black tabular-nums">{Math.round(cam.distance)} m</div>
           <div className="truncate text-xs opacity-80">{cam.name}</div>
         </div>

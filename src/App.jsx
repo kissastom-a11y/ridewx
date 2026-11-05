@@ -1,3 +1,4 @@
+import { t, langChosen, LANGS, setLang, lang } from './lib/i18n.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapView from './components/MapView.jsx';
 import RouteForm, { nowLocal, showVal } from './features/routeWeather/RouteForm.jsx';
@@ -12,6 +13,13 @@ import EngineLoadGauge from './features/engineLoad/EngineLoadGauge.jsx';
 import PlacesBar from './features/places/PlacesBar.jsx';
 import { usePlaces } from './features/places/usePlaces.js';
 import TrafficSetup from './features/traffic/TrafficSetup.jsx';
+import LanguagePicker from './features/settings/LanguagePicker.jsx';
+import { parseCommand } from './features/voice/commands.js';
+import { useSpeechCommands, speechCommandsSupported } from './features/voice/useSpeechCommands.js';
+import { REPLY } from './features/voice/replies.js';
+import VoiceOverlay from './features/voice/VoiceOverlay.jsx';
+import { instructionText } from './lib/voice.js';
+import { weatherText } from './features/routeWeather/weatherIcons.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
 import { useWakeLock } from './hooks/useWakeLock.js';
 import { useCompass, fuseHeading, requestCompassPermission } from './hooks/useCompass.js';
@@ -25,7 +33,7 @@ import ManeuverBanner from './features/guidance/ManeuverBanner.jsx';
 import { useSpeedLimit } from './features/speed/useSpeedLimit.js';
 import SpeedHud from './features/speed/SpeedHud.jsx';
 import WindEdges from './features/crosswind/WindEdges.jsx';
-import { say, GR, setVoiceEnabled, hasGreekVoice } from './lib/voice.js';
+import { say, V, setVoiceEnabled, hasGreekVoice } from './lib/voice.js';
 import { analyzeWind } from './lib/wind.js';
 import FuelPanel, { VehiclePicker } from './features/fuel/FuelPanel.jsx';
 import { useFuel } from './features/fuel/useFuel.js';
@@ -126,7 +134,7 @@ export default function App() {
     const a = analyzeWind(wind, fused.heading, 0);
     if (a.severity === 'red' && a.quadrant === 'cross' && Date.now() - xwWarned.current > 300000) {
       xwWarned.current = Date.now();
-      say(GR.crosswind(a.side, Math.abs(a.gustCross)));
+      say(V().crosswind(a.side, Math.abs(a.gustCross)));
     }
   }, [riding, muted, wind, fused.heading]);
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
@@ -147,18 +155,19 @@ export default function App() {
     setLocalErr(null);
     setRouteSaved(false);
     const f = resolveVal(fromV);
-    const t = resolveVal(toV);
-    if (!t) return;
+    const dest = resolveVal(toV);
+    if (!dest) return;
     const origin = f ? asPoint(f) : myLocation;
-    if (!origin) { setLocalErr('Your location isn\'t available yet – allow location access or type a start point.'); return; }
-    const res = await rw.plan({ from: origin, to: asPoint(t), startTime: when || nowLocal(), trafficKey: trafficKey || null, avoidTolls });
+    if (!origin) { setLocalErr(t("Your location isn't available yet – allow location access or type a start point.")); return; }
+    const res = await rw.plan({ from: origin, to: asPoint(dest), startTime: when || nowLocal(), trafficKey: trafficKey || null, avoidTolls });
     if (!res) return;
     // Remember both ends as place objects so the route can be saved & reversed.
-    const toPlace = typeof t === 'object' ? t : { icon: '📍', name: t.split(',')[0], lat: res.destination.lat, lon: res.destination.lon, label: res.destination.label };
+    const toPlace = typeof dest === 'object' ? dest : { icon: '📍', name: dest.split(',')[0], lat: res.destination.lat, lon: res.destination.lon, label: res.destination.label };
     const fromPlace = !f || f.isMe ? null : typeof f === 'object' ? f : { icon: '📍', name: f.split(',')[0], lat: res.origin.lat, lon: res.origin.lon, label: res.origin.label };
     setLastPlan({ from: fromPlace, to: toPlace });
     setEditRoute(false);
     pl.addRecent({ ...res.destination, name: toPlace.name });
+    return res;
   }, [resolveVal, myLocation, rw, trafficKey, pl, avoidTolls]);
 
   const goTo = (dest) => {
@@ -166,14 +175,14 @@ export default function App() {
     setFromVal('');
     setToVal(place);
     setStartTime(nowLocal());
-    runPlan('', place);
+    return runPlan('', place);
   };
 
   const goRoute = (r, reverse) => {
     const a = reverse ? r.to : r.from;
     const b = reverse ? r.from : r.to;
     if (!b) { // reversing "my location → X" means X → my location
-      if (!myLocation) { setLocalErr('Your location isn\'t available yet.'); return; }
+      if (!myLocation) { setLocalErr(t('Location not available yet')); return; }
     }
     const fromV = a || '';
     const toV = b || { icon: '📍', name: 'My location', isMe: true, ...myLocation };
@@ -201,7 +210,7 @@ export default function App() {
     if (offCount.current >= 4 && Date.now() - lastReroute.current > 20000) {
       lastReroute.current = Date.now();
       offCount.current = 0;
-      if (!muted) say(GR.rerouting, { urgent: true });
+      if (!muted) say(V().rerouting, { urgent: true });
       runPlan('', lastPlan.to, nowLocal());
     }
   }, [position]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -209,7 +218,7 @@ export default function App() {
   const startRide = (sim) => {
     unlockAudio(); // must happen inside this tap (also unlocks the Greek voice on iOS)
     enableCompass(); // iOS asks for motion & orientation access here
-    if (!muted) say(GR.rideStart);
+    if (!muted) say(V().rideStart);
     requestMotionPermission(); // iOS: vibration sensor prompt
     if (!vehicle) setPickerOpen(true);
     setSimulate(sim);
@@ -228,6 +237,83 @@ export default function App() {
     if (!trafficKey) setTrafficSetup(true);
     else setShowTraffic((v) => !v);
   };
+
+  // ── 🎤 Voice commands ──────────────────────────────────────────────
+  // Handlers read the latest state through a ref (recognition results arrive
+  // asynchronously, after renders have moved on).
+  const live = useRef({});
+  live.current = { riding, rw, fuel, wind, fused, guidance, speedInfo, progressM, trafficKey, pl, lastPlan, goTo, runPlan, startRide, stopRide };
+  const onVoice = useCallback(async (alts) => {
+    const L = live.current;
+    const c = parseCommand(alts, { places: L.pl.places });
+    const speak = (txt) => say(txt, { urgent: true, force: true });
+    const go = async (res, name, id) => {
+      if (!res) return false;
+      speak(REPLY.goingTo(name, Math.max(1, Math.round(res.durationS / 60)), id));
+      if (!L.riding) L.startRide(false);
+      return true;
+    };
+    switch (c.type) {
+      case 'place': {
+        const ok = await go(await L.goTo(c.place), t(c.place.name), c.place.id);
+        if (!ok) speak(REPLY.notFound(t(c.place.name)));
+        break;
+      }
+      case 'place_unset': speak(REPLY.placeUnset(c.placeId)); break;
+      case 'navigate': {
+        speak(REPLY.searching(c.query));
+        setFromVal('');
+        setToVal(c.query);
+        const res = await L.runPlan('', c.query, nowLocal());
+        if (!(await go(res, (res?.destination?.label || c.query).split(',')[0]))) speak(REPLY.notFound(c.query));
+        break;
+      }
+      case 'stop': if (L.riding) L.stopRide(); speak(REPLY.stopped()); break;
+      case 'start': if (!L.riding) L.startRide(false); break;
+      case 'mute': speak(REPLY.muted()); setTimeout(() => setMuted(true), 1200); break;
+      case 'unmute': setMuted(false); speak(REPLY.ok()); break;
+      case 'fuel': speak(REPLY.fuel(L.fuel)); break;
+      case 'weather': {
+        const wps = L.rw.waypoints || [];
+        if (wps.length) {
+          const d = wps[wps.length - 1];
+          let txt = REPLY.weatherDest('', d.etaUnix, d.weather, weatherText(d.weather.weatherCode));
+          const from = L.progressM ?? 0;
+          const rain = wps.find((w) => w.distM >= from && w.weather.precipitation >= 0.5);
+          if (rain) txt += REPLY.rainAhead(Math.max(1, Math.round((rain.distM - from) / 1000)));
+          speak(txt);
+        } else if (L.wind) speak(REPLY.weatherHere(L.wind));
+        else speak(REPLY.noWind());
+        break;
+      }
+      case 'wind':
+        if (L.wind && L.fused.heading != null) speak(REPLY.wind(analyzeWind(L.wind, L.fused.heading, 0), L.wind));
+        else if (L.wind) speak(REPLY.weatherHere(L.wind));
+        else speak(REPLY.noWind());
+        break;
+      case 'eta': {
+        const r = L.rw.route;
+        if (!r) { speak(REPLY.noRoute()); break; }
+        const left = Math.max(0, r.distanceM - (L.progressM ?? 0));
+        const etaUnix = L.riding ? Date.now() / 1000 + (r.durationS * left) / r.distanceM : r.startUnix + r.durationS;
+        speak(REPLY.eta(etaUnix, left));
+        break;
+      }
+      case 'next':
+        if (L.guidance?.next) speak(instructionText(L.guidance.next, L.guidance.dist));
+        else speak(REPLY.noRoute());
+        break;
+      case 'limit': speak(REPLY.limit(L.speedInfo.limit?.kmh)); break;
+      case 'traffic_on': if (L.trafficKey) setShowTraffic(true); else setTrafficSetup(true); speak(REPLY.ok()); break;
+      case 'traffic_off': setShowTraffic(false); speak(REPLY.ok()); break;
+      case 'night': setTheme('night'); speak(REPLY.ok()); break;
+      case 'day': setTheme('day'); speak(REPLY.ok()); break;
+      case 'help': speak(REPLY.help()); break;
+      default: speak(REPLY.unknown(c.heard));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const sc = useSpeechCommands(onVoice);
+  const onMic = () => { unlockAudio(); enableCompass(); sc.start(); };
 
   const locate = () => {
     enableCompass();
@@ -259,6 +345,7 @@ export default function App() {
           traffic={trafficKey && showTraffic ? trafficKey : null}
         />
         {riding && <ManeuverBanner guidance={guidance} />}
+        <VoiceOverlay sc={sc} />
         {riding && <WindEdges wind={wind} heading={fused.heading} screenUp={follow ? fused.heading : mapBearing} />}
         {riding && <SpeedHud speed={speedInfo.speed} limit={speedInfo.limit} over={speedInfo.over} />}
         {riding && (engineSnap || fuel) && (
@@ -279,7 +366,10 @@ export default function App() {
         )}
 
         {/* Floating buttons */}
-        <div className="absolute right-3 top-32 z-[900] flex flex-col gap-2">
+        <div className={`absolute right-3 z-[1100] flex flex-col gap-2 ${riding ? 'top-[44%] -translate-y-1/2' : 'top-32'}`}>
+          {speechCommandsSupported && (
+            <button className={`${fab} ${sc.listening ? 'animate-pulse !bg-red-600 !text-white' : '!bg-sky-600 !text-white'}`} onClick={onMic} title="Voice command">🎤</button>
+          )}
           <button className={fab} onClick={() => setTheme(theme === 'day' ? 'night' : 'day')} title="Day / night map">
             {theme === 'day' ? '🌙' : '☀️'}
           </button>
@@ -290,12 +380,12 @@ export default function App() {
         {riding && !follow && (
           <button onClick={() => setFollow(true)}
             className="absolute bottom-4 left-1/2 z-[900] -translate-x-1/2 rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-lg">
-            ◎ Re-centre
+            {t('◎ Re-centre')}
           </button>
         )}
         {gpsError && (
           <div className="absolute inset-x-3 bottom-3 z-[900] rounded-lg bg-amber-500/95 p-2 text-xs font-medium text-slate-900">
-            📍 {gpsError}. Allow location for this site in your browser settings, then reopen the app.
+            {t('📍 {e}. Allow location for this site in your browser settings, then reopen the app.', { e: gpsError })}
           </div>
         )}
       </div>
@@ -306,10 +396,10 @@ export default function App() {
           <button onClick={() => setSheetOpen((o) => !o)} className="mx-auto -mt-1 block h-1.5 w-12 rounded-full bg-slate-600" aria-label="Expand panel" />
         )}
         <div className="flex gap-1 rounded-lg bg-slate-800 p-1 text-sm">
-          {['plan', 'ride'].map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`flex-1 rounded-md py-1.5 font-semibold capitalize ${tab === t ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>
-              {t}
+          {['plan', 'ride'].map((k) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`flex-1 rounded-md py-1.5 font-semibold ${tab === k ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>
+              {t(k === 'plan' ? 'Plan' : 'Ride')}
             </button>
           ))}
         </div>
@@ -329,11 +419,11 @@ export default function App() {
                 <div className="flex gap-2">
                   <button onClick={() => { const v = !avoidTolls; setAvoidTolls(v); }}
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${avoidTolls ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 ring-1 ring-slate-700'}`}>
-                    💶 {avoidTolls ? 'Avoiding tolls' : 'Avoid tolls'}
+                    💶 {t(avoidTolls ? 'Avoiding tolls' : 'Avoid tolls')}
                   </button>
                   {avoidTolls !== !!rw.route.avoidTolls && (
                     <button onClick={() => runPlan(lastPlan?.from || '', lastPlan?.to, nowLocal())} className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold">
-                      ↻ Update route
+                      {t('↻ Update route')}
                     </button>
                   )}
                 </div>
@@ -344,7 +434,7 @@ export default function App() {
                 {lastPlan && (
                   <button disabled={routeSaved} onClick={() => { pl.saveRoute(lastPlan.from, lastPlan.to); setRouteSaved(true); }}
                     className="w-full rounded-lg bg-slate-800 py-2 text-sm text-slate-200 ring-1 ring-slate-700 disabled:text-emerald-400">
-                    {routeSaved ? '✓ Saved to My routes' : '⭐ Save this route'}
+                    {t(routeSaved ? '✓ Saved to My routes' : '⭐ Save this route')}
                   </button>
                 )}
               </>
@@ -364,21 +454,31 @@ export default function App() {
                 />
                 <button onClick={() => setAvoidTolls(!avoidTolls)}
                   className={`rounded-full px-3 py-1 text-xs font-semibold ${avoidTolls ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 ring-1 ring-slate-700'}`}>
-                  💶 {avoidTolls ? 'Avoiding tolls ✓' : 'Avoid tolls'}
+                  💶 {t(avoidTolls ? 'Avoiding tolls ✓' : 'Avoid tolls')}
                 </button>
                 <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
                   onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} recents={pl.recents} />
                 {rw.route && editRoute && (
-                  <button onClick={() => setEditRoute(false)} className="text-xs text-slate-400 underline">← Back to current route</button>
+                  <button onClick={() => setEditRoute(false)} className="text-xs text-slate-400 underline">{t('← Back to current route')}</button>
                 )}
               </>
             )}
-            {rw.status === 'routing' && <p className="text-xs text-slate-400">Finding route{trafficKey ? ' + live traffic' : ''}…</p>}
-            {rw.status === 'weather' && <p className="text-xs text-slate-400">Fetching weather for each point at your arrival time…</p>}
+            {rw.status === 'routing' && <p className="text-xs text-slate-400">{t(trafficKey ? 'Finding route + live traffic…' : 'Finding route…')}</p>}
+            {rw.status === 'weather' && <p className="text-xs text-slate-400">{t('Fetching weather for each point at your arrival time…')}</p>}
             {(rw.error || localErr) && <p className="text-xs text-red-400">{localErr || rw.error}</p>}
-            <button onClick={() => setTrafficSetup(true)} className="text-xs text-slate-500 underline">
-              {trafficKey ? 'Traffic settings' : 'Set up live traffic'}
-            </button>
+            <div className="flex items-center justify-between">
+              <button onClick={() => setTrafficSetup(true)} className="text-xs text-slate-500 underline">
+                {t(trafficKey ? 'Traffic settings' : 'Set up live traffic')}
+              </button>
+              <div className="flex gap-1 text-xs">
+                {LANGS.map((l) => (
+                  <button key={l.id} onClick={() => l.id !== lang() && setLang(l.id)}
+                    className={`rounded-full px-2 py-0.5 ${l.id === lang() ? 'bg-slate-700 text-white' : 'text-slate-500'}`}>
+                    {l.flag} {l.id.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -386,15 +486,15 @@ export default function App() {
           <>
             {!riding ? (
               <div className="flex gap-2">
-                <button onClick={() => startRide(false)} className="flex-1 rounded-lg bg-emerald-600 py-3 font-semibold">Start ride (GPS)</button>
+                <button onClick={() => startRide(false)} className="flex-1 rounded-lg bg-emerald-600 py-3 font-semibold">{t('Start ride (GPS)')}</button>
                 <button onClick={() => startRide(true)} disabled={!rw.route}
                   className="rounded-lg bg-slate-700 px-3 text-sm disabled:opacity-40" title="Replays the planned route at 10× speed">
-                  Simulate
+                  {t('Simulate')}
                 </button>
               </div>
             ) : (
               <div className="flex gap-2">
-                <button onClick={stopRide} className="flex-1 rounded-lg bg-red-700 py-2 font-semibold">Stop</button>
+                <button onClick={stopRide} className="flex-1 rounded-lg bg-red-700 py-2 font-semibold">{t('Stop')}</button>
                 <button onClick={() => setMuted((m) => !m)} className="rounded-lg bg-slate-700 px-3 text-sm">{muted ? '🔇' : '🔊'}</button>
               </div>
             )}
@@ -402,8 +502,8 @@ export default function App() {
               progressM={progressM} roadInfo={rw.roadInfo} routeCameras={routeCameras} />
             {riding && !hasGreekVoice() && (
               <p className="rounded-lg bg-amber-500/15 p-2 text-[11px] text-amber-200">
-                🗣️ No Greek voice on this phone yet – install one for the best sound. Android: Settings → Text-to-speech → Google → Greek.
-                iPhone: Settings → Accessibility → Spoken Content → Voices → Greek → Melina.
+                {t('🗣️ No voice for your language on this phone yet – install one for the best sound.')}{' '}
+                {t('Android: Settings → Text-to-speech → Google → install voice data. iPhone: Settings → Accessibility → Spoken Content → Voices.')}
               </p>
             )}
             <FuelPanel fuel={fuel} vehicle={vehicle} vstate={vstate} vib={vib} riding={riding}
@@ -414,6 +514,7 @@ export default function App() {
         )}
       </div>
 
+      {!langChosen() && <LanguagePicker />}
       {pickerOpen && <VehiclePicker selectedId={vs.presetId} onPick={(id) => setVs((o) => ({ ...o, presetId: id }))} onClose={() => setPickerOpen(false)} />}
       {trafficSetup && <TrafficSetup currentKey={trafficKey} onSave={(k) => { setTrafficKey(k); setShowTraffic(true); }} onClose={() => setTrafficSetup(false)} />}
     </div>

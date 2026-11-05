@@ -6,6 +6,7 @@
  *   - main hazards on the way
  *   - ▶ Start ride, and a collapsible detail list
  */
+import { t } from '../../lib/i18n.js';
 import { useState } from 'react';
 import { HAZARD_COLORS, HAZARD_LABELS } from './hazard.js';
 import { weatherIcon, weatherText, compass } from './weatherIcons.js';
@@ -14,7 +15,7 @@ import { WindGlyph } from './RideAhead.jsx';
 const SEV = { green: '#22c55e', orange: '#f97316', red: '#dc2626' };
 
 const fmtTime = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : `${Math.round(s / 60)} min`);
+const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} ${t('h')} ${Math.round((s % 3600) / 60)} ${t('min')}` : `${Math.round(s / 60)} ${t('min')}`);
 
 export default function RouteWeatherPanel({ route, waypoints, destName, onSelect, onStart }) {
   const [details, setDetails] = useState(false);
@@ -36,11 +37,11 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
     <div className="space-y-3">
       {/* Trip line */}
       <div className="text-sm text-slate-300">
-        <span className="font-semibold text-white">{fmtDur(route.durationS)}</span> · {(route.distanceM / 1000).toFixed(0)} km · arrive{' '}
+        <span className="font-semibold text-white">{fmtDur(route.durationS)}</span> · {(route.distanceM / 1000).toFixed(0)} {t('km')} · {t('arrive')}{' '}
         <span className="font-semibold text-white">{fmtTime(arrive)}</span>
         {route.traffic ? (
           <span className={route.traffic.delayS > 300 ? 'text-orange-400' : 'text-emerald-400'}>
-            {' '}· 🚦 {route.traffic.delayS >= 60 ? `+${Math.round(route.traffic.delayS / 60)} min traffic` : 'no traffic delays'}
+            {' '}· 🚦 {route.traffic.delayS >= 60 ? t('+{n} min traffic', { n: Math.round(route.traffic.delayS / 60) }) : t('no traffic delays')}
           </span>
         ) : null}
       </div>
@@ -51,12 +52,12 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
         style={{ background: `${HAZARD_COLORS[dest.hazard.level]}1f`, border: `2px solid ${HAZARD_COLORS[dest.hazard.level]}` }}>
         <span className="text-5xl leading-none">{weatherIcon(dw.weatherCode, arrive)}</span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs text-slate-400">🏁 {destName || 'Destination'} · at {fmtTime(arrive)}</div>
+          <div className="truncate text-xs text-slate-400">🏁 {destName ? t(destName) : t('Destination')} · {t('at')} {fmtTime(arrive)}</div>
           <div className="text-2xl font-bold text-white">{Math.round(dw.temperature)}°C <span className="text-base font-medium text-slate-300">{weatherText(dw.weatherCode)}</span></div>
           <div className="text-xs text-slate-300">
-            💨 {Math.round(dw.windSpeed)} km/h {compass(dw.windDirection)}, gusts {Math.round(dw.windGusts)}
+            💨 {Math.round(dw.windSpeed)} {t('km/h')} {compass(dw.windDirection)}, {t('gusts')} {Math.round(dw.windGusts)}
             {dw.precipitation >= 0.1 && <> · 💧 {dw.precipitation.toFixed(1)} mm/h</>}
-            {dw.visibility < 5000 && <> · 👁 {(dw.visibility / 1000).toFixed(1)} km</>}
+            {dw.visibility < 5000 && <> · 👁 {(dw.visibility / 1000).toFixed(1)} {t('km')}</>}
           </div>
         </div>
       </button>
@@ -64,8 +65,8 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
       {/* Timeline along the way */}
       <div>
         <div className="mb-1 flex justify-between text-[11px] uppercase tracking-wide text-slate-500">
-          <span>Weather on the way</span>
-          <span style={{ color: HAZARD_COLORS[worst] }}>{HAZARD_LABELS[worst]}</span>
+          <span>{t('Weather on the way')}</span>
+          <span style={{ color: HAZARD_COLORS[worst] }}>{t(HAZARD_LABELS[worst])}</span>
         </div>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
           {waypoints.map((w, i) => (
@@ -77,7 +78,7 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
               <span className="font-semibold tabular-nums text-white">{Math.round(w.weather.temperature)}°</span>
               <WindGlyph rel={w.wind.relAngle} color={SEV[w.wind.severity]} speed={w.weather.windSpeed} size={20} />
               {w.exposure?.exposed && <span className="text-[10px]">⛰</span>}
-              <span className="tabular-nums text-[10px] text-slate-500">{i === waypoints.length - 1 ? '🏁' : `${(w.distM / 1000).toFixed(0)} km`}</span>
+              <span className="tabular-nums text-[10px] text-slate-500">{i === waypoints.length - 1 ? '🏁' : `${(w.distM / 1000).toFixed(0)} ${t('km')}`}</span>
             </button>
           ))}
         </div>
@@ -86,19 +87,19 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
       {hazards.length > 0 && (
         <ul className="space-y-0.5 text-xs">
           {hazards.slice(0, 4).map((h) => (
-            <li key={h.kind} style={{ color: HAZARD_COLORS[h.level] }}>⚠️ {h.text} <span className="text-slate-500">from km {h.km.toFixed(0)}</span></li>
+            <li key={h.kind} style={{ color: HAZARD_COLORS[h.level] }}>⚠️ {h.text} <span className="text-slate-500">{t('from km {n}', { n: h.km.toFixed(0) })}</span></li>
           ))}
         </ul>
       )}
 
       {onStart && (
         <button onClick={onStart} className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white active:bg-emerald-700">
-          ▶ Start ride
+          {t('▶ Start ride')}
         </button>
       )}
 
       <button onClick={() => setDetails((d) => !d)} className="text-xs text-slate-500 underline">
-        {details ? 'Hide details' : 'Show details for every point'}
+        {details ? t('Hide details') : t('Show details for every point')}
       </button>
       {details && (
         <ul className="space-y-1">
@@ -108,7 +109,7 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
                 className="flex w-full items-center gap-2 rounded-md bg-slate-800/70 px-2 py-1.5 text-left text-xs text-slate-200">
                 <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: HAZARD_COLORS[w.hazard.level] }} />
                 <span className="w-11 shrink-0 tabular-nums text-slate-400">{fmtTime(w.etaUnix)}</span>
-                <span className="w-11 shrink-0 tabular-nums">{(w.distM / 1000).toFixed(0)} km</span>
+                <span className="w-11 shrink-0 tabular-nums">{(w.distM / 1000).toFixed(0)} {t('km')}</span>
                 <span className="w-9 shrink-0 tabular-nums">{Math.round(w.weather.temperature)}°</span>
                 <span className="shrink-0 tabular-nums">💨{Math.round(w.weather.windSpeed)}/{Math.round(w.weather.windGusts)}</span>
                 <span className="truncate text-slate-400">{w.hazard.reasons[0] || weatherText(w.weather.weatherCode)}</span>

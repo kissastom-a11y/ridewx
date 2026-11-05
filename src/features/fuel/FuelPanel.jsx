@@ -2,6 +2,7 @@
  * Ride-page fuel card: vehicle chip (one tap to switch), live consumption,
  * trip total, "where the fuel went" bar, sensor status and fill-up calibration.
  */
+import { t } from '../../lib/i18n.js';
 import { useState } from 'react';
 import { PRESETS } from './vehicles.js';
 
@@ -17,17 +18,17 @@ export function VehiclePicker({ selectedId, onPick, onClose }) {
   return (
     <div className="fixed inset-0 z-[2000] flex items-end bg-black/60 p-3 sm:items-center sm:justify-center" onClick={onClose}>
       <div className="w-full max-w-md space-y-3 rounded-2xl bg-slate-900 p-4 text-slate-100 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold">What are you riding / driving?</h2>
-        <p className="text-xs text-slate-400">Pick the closest – it's remembered. Fill-ups will fine-tune it to your vehicle.</p>
+        <h2 className="text-lg font-bold">{t('What are you riding / driving?')}</h2>
+        <p className="text-xs text-slate-400">{t("Pick the closest – it's remembered. Fill-ups will fine-tune it to your vehicle.")}</p>
         <div className="grid grid-cols-2 gap-2">
           {PRESETS.map((p) => (
             <button key={p.id} onClick={() => { onPick(p.id); onClose(); }}
               className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm ${p.id === selectedId ? 'bg-sky-700' : 'bg-slate-800 active:bg-slate-700'}`}>
-              <span className="text-2xl">{p.icon}</span><span className="leading-tight">{p.label}</span>
+              <span className="text-2xl">{p.icon}</span><span className="leading-tight">{t(p.label)}</span>
             </button>
           ))}
         </div>
-        <button onClick={onClose} className="w-full rounded-lg py-2 text-sm text-slate-400">Close</button>
+        <button onClick={onClose} className="w-full rounded-lg py-2 text-sm text-slate-400">{t('Close')}</button>
       </div>
     </div>
   );
@@ -39,7 +40,7 @@ export default function FuelPanel({ fuel, vehicle, vstate, onOpenPicker, onRefue
   if (!vehicle) {
     return (
       <button onClick={onOpenPicker} className="w-full rounded-xl bg-slate-800/80 p-3 text-left text-sm text-slate-200">
-        ⛽ <b>Fuel consumption</b> – tap to choose your vehicle
+        {t('⛽ Fuel consumption – tap to choose your vehicle')}
       </button>
     );
   }
@@ -48,8 +49,8 @@ export default function FuelPanel({ fuel, vehicle, vstate, onOpenPicker, onRefue
   return (
     <div className="space-y-2 rounded-xl bg-slate-800/80 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-wide text-slate-500">Fuel</span>
-        <button onClick={onOpenPicker} className="rounded-full bg-slate-700 px-2.5 py-1 text-xs">{vehicle.icon} {vehicle.label} ▾</button>
+        <span className="text-[11px] uppercase tracking-wide text-slate-500">{t('Fuel')}</span>
+        <button onClick={onOpenPicker} className="rounded-full bg-slate-700 px-2.5 py-1 text-xs">{vehicle.icon} {t(vehicle.label)} ▾</button>
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -57,15 +58,15 @@ export default function FuelPanel({ fuel, vehicle, vstate, onOpenPicker, onRefue
           <div className="text-2xl font-black tabular-nums text-white">
             {fuel?.overrun ? '0.0' : fuel?.l100 != null ? fuel.l100.toFixed(1) : fuel ? fuel.lph.toFixed(2) : '—'}
           </div>
-          <div className="text-[10px] text-slate-400">{fuel?.l100 != null || fuel?.overrun ? 'L/100 now' : 'L/h (stopped)'}</div>
+          <div className="text-[10px] text-slate-400">{t(fuel?.l100 != null || fuel?.overrun ? 'L/100 now' : 'L/h (stopped)')}</div>
         </div>
         <div>
           <div className="text-2xl font-black tabular-nums text-white">{fuel?.avgL100 != null ? fuel.avgL100.toFixed(1) : '—'}</div>
-          <div className="text-[10px] text-slate-400">L/100 trip avg</div>
+          <div className="text-[10px] text-slate-400">{t('L/100 trip avg')}</div>
         </div>
         <div>
           <div className="text-2xl font-black tabular-nums text-white">{fuel ? fuel.tripL.toFixed(2) : '—'}</div>
-          <div className="text-[10px] text-slate-400">L this trip</div>
+          <div className="text-[10px] text-slate-400">{t('L this trip')}</div>
         </div>
       </div>
 
@@ -76,7 +77,7 @@ export default function FuelPanel({ fuel, vehicle, vstate, onOpenPicker, onRefue
           </div>
           <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-slate-400">
             {PARTS.filter((p) => fuel.parts[p.k] / total > 0.03).map((p) => (
-              <span key={p.k}><span style={{ color: p.color }}>●</span> {p.label} {Math.round((fuel.parts[p.k] / total) * 100)}%</span>
+              <span key={p.k}><span style={{ color: p.color }}>●</span> {t(p.label)} {Math.round((fuel.parts[p.k] / total) * 100)}%</span>
             ))}
           </div>
         </div>
@@ -86,30 +87,30 @@ export default function FuelPanel({ fuel, vehicle, vstate, onOpenPicker, onRefue
         <div className="flex flex-wrap gap-1.5 text-[10px] text-slate-400">
           <span className="rounded bg-slate-900/70 px-1.5 py-0.5">📡 {fuel.inputs.accel >= 0 ? '+' : ''}{fuel.inputs.accel.toFixed(1)} m/s²</span>
           <span className="rounded bg-slate-900/70 px-1.5 py-0.5">⛰ {(fuel.inputs.grade * 100).toFixed(1)}%</span>
-          <span className="rounded bg-slate-900/70 px-1.5 py-0.5">💨 {fuel.inputs.headwindKmh >= 0 ? 'head' : 'tail'} {Math.abs(Math.round(fuel.inputs.headwindKmh))}</span>
+          <span className="rounded bg-slate-900/70 px-1.5 py-0.5">💨 {t(fuel.inputs.headwindKmh >= 0 ? 'head' : 'tail')} {Math.abs(Math.round(fuel.inputs.headwindKmh))}</span>
           <span className="rounded bg-slate-900/70 px-1.5 py-0.5">
-            {fuel.inputs.loadSrc === 'sound' ? '🎙 sound' : fuel.inputs.loadSrc === 'vibration' ? '📳 vibration' : '🧮 physics only'}
+            {fuel.inputs.loadSrc === 'sound' ? `🎙 ${t('sound')}` : fuel.inputs.loadSrc === 'vibration' ? `📳 ${t('vibration')}` : `🧮 ${t('physics only')}`}
           </span>
-          {vib?.available && <span className="rounded bg-slate-900/70 px-1.5 py-0.5">📳 engine {fuel.inputs.engineOn ? 'on' : 'off'}</span>}
+          {vib?.available && <span className="rounded bg-slate-900/70 px-1.5 py-0.5">📳 {t(fuel.inputs.engineOn ? 'engine on' : 'engine off')}</span>}
         </div>
       )}
       {riding && vib && !vib.available && (
-        <p className="text-[10px] text-slate-500">📳 Vibration sensor not available in this browser – using speed &amp; sound.</p>
+        <p className="text-[10px] text-slate-500">{t('📳 Vibration sensor not available in this browser – using speed & sound.')}</p>
       )}
 
       <button onClick={() => setShowCal((v) => !v)} className="text-[11px] text-slate-400 underline">
-        ⛽ Fill-up calibration (×{vstate.correction.toFixed(2)} · {vstate.fills} logged)
+        {t('⛽ Fill-up calibration (×{c} · {n} logged)', { c: vstate.correction.toFixed(2), n: vstate.fills })}
       </button>
       {showCal && (
         <div className="space-y-1 rounded-lg bg-slate-900/60 p-2 text-xs text-slate-300">
-          <p>Fill to full. At the next full fill-up, enter the litres the pump showed. Estimated since last fill-up: <b>{vstate.litresSinceFill.toFixed(1)} L</b></p>
+          <p>{t('Fill to full. At the next full fill-up, enter the litres the pump showed. Estimated since last fill-up:')} <b>{vstate.litresSinceFill.toFixed(1)} L</b></p>
           <div className="flex gap-2">
-            <input inputMode="decimal" placeholder="litres" value={refuel} onChange={(e) => setRefuel(e.target.value)}
+            <input inputMode="decimal" placeholder={t('litres')} value={refuel} onChange={(e) => setRefuel(e.target.value)}
               className="flex-1 rounded bg-slate-800 px-2 py-1 ring-1 ring-slate-700" />
             <button onClick={() => { const l = parseFloat(refuel.replace(',', '.')); if (l > 0) { onRefuel(l); setRefuel(''); } }}
-              className="rounded bg-emerald-700 px-3">Save</button>
+              className="rounded bg-emerald-700 px-3">{t('Save')}</button>
           </div>
-          <p className="text-slate-500">Each fill-up nudges the estimate halfway toward reality – after 2–3 it fits your vehicle.</p>
+          <p className="text-slate-500">{t('Each fill-up nudges the estimate halfway toward reality – after 2–3 it fits your vehicle.')}</p>
         </div>
       )}
     </div>

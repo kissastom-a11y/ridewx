@@ -3,6 +3,7 @@
  *   geocode → OSRM route → resample every ~12 km → ETA per waypoint
  *   → Open-Meteo at (lat, lon, ETA) → hazard per waypoint → per-segment colours
  */
+import { t } from '../../lib/i18n.js';
 import { useCallback, useRef, useState } from 'react';
 import { geocode } from '../../services/geocode.js';
 import { fetchRoute, classRanges } from '../../services/osrm.js';
@@ -64,8 +65,8 @@ export function useRouteWeather() {
       // weather is fetched for when you'll REALLY be there.
       let traffic = null;
       if (trafficKey) {
-        const t = await fetchTrafficSummary(trafficKey, origin, destination, { signal, avoidTolls });
-        if (t) traffic = { ...t, factor: Math.min(3, Math.max(1, t.travelS / Math.max(t.noTrafficS, 1))) };
+        const ts = await fetchTrafficSummary(trafficKey, origin, destination, { signal, avoidTolls });
+        if (ts) traffic = { ...ts, factor: Math.min(3, Math.max(1, ts.travelS / Math.max(ts.noTrafficS, 1))) };
       }
       const etaFactor = traffic?.factor ?? 1;
       if (traffic) route.durationS = Math.round(route.durationS * etaFactor);
@@ -93,7 +94,7 @@ export function useRouteWeather() {
         const k = exposure.factor;
         const hazard = classifyHazard({ ...wx, windGusts: wx.windGusts * k });
         if (exposure.exposed && wx.windGusts * k >= 30) {
-          hazard.reasons.push(`Exposed high ground (+${Math.round((k - 1) * 100)}% wind)`);
+          hazard.reasons.push(t('Exposed high ground (+{v}% wind)', { v: Math.round((k - 1) * 100) }));
           hazard.level = Math.max(hazard.level, 1);
         }
         // Route-level crosswind estimate using the ROAD bearing at that point
@@ -143,7 +144,7 @@ export function useRouteWeather() {
           if (e.name === 'AbortError') return;
           setState((s) => (s.track === track ? { ...s, roadInfo: { ...s.roadInfo, status: 'error' } } : s));
         });
-      return { origin, destination };
+      return { origin, destination, durationS: route.durationS, distanceM: route.distanceM };
     } catch (err) {
       if (err.name === 'AbortError') return null;
       setState((s) => ({ ...s, status: 'error', error: err.message }));

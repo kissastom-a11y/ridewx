@@ -4,7 +4,7 @@
  * "Start ride" button tap, otherwise the first alert will be silent.
  * Speech output goes through to a Bluetooth helmet intercom like any media audio.
  */
-import { say, unlockVoice, GR } from '../../lib/voice.js';
+import { say, unlockVoice, V } from '../../lib/voice.js';
 
 let ctx = null;
 
@@ -39,7 +39,7 @@ export function playCameraAlert(cam) {
     [880, 1100, 1320].forEach((f, i) => beep(f, t + i * 0.2));
   }
   navigator.vibrate?.([200, 100, 200]);
-  setTimeout(() => say(GR.camera(cam.distance, cam.maxspeed), { urgent: true }), 700);
+  setTimeout(() => say(V().camera(cam.distance, cam.maxspeed), { urgent: true }), 700);
 }
 
 /** Short two-tone chime + spoken message (tunnel / dirt-road warnings). */

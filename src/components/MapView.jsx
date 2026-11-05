@@ -6,6 +6,7 @@
  * All our overlays are GeoJSON sources. A style switch (day/night) wipes custom
  * layers, so they are (re)added on every 'style.load' from the cached data.
  */
+import { t } from '../lib/i18n.js';
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -34,11 +35,11 @@ function circle(lat, lon, r, n = 48) {
 
 function wpPopup(w) {
   const wx = w.weather;
-  return `<b>${fmtTime(w.etaUnix)} · ${(w.distM / 1000).toFixed(0)} km</b><br/>` +
-    `${HAZARD_LABELS[w.hazard.level]}${w.hazard.reasons.length ? ': ' + w.hazard.reasons.join(', ') : ''}<br/>` +
-    `${wx.temperature.toFixed(1)} °C · ${wx.precipitation.toFixed(1)} mm/h · vis ${(wx.visibility / 1000).toFixed(1)} km<br/>` +
-    `Wind ${Math.round(wx.windDirection)}° / ${Math.round(wx.windSpeed)} G${Math.round(wx.windGusts)} km/h<br/>` +
-    `Crosswind on this road ≈ ${Math.abs(w.wind.crosswind).toFixed(0)} km/h ${w.wind.side}`;
+  return `<b>${fmtTime(w.etaUnix)} · ${(w.distM / 1000).toFixed(0)} ${t('km')}</b><br/>` +
+    `${t(HAZARD_LABELS[w.hazard.level])}${w.hazard.reasons.length ? ': ' + w.hazard.reasons.join(', ') : ''}<br/>` +
+    `${wx.temperature.toFixed(1)} °C · ${wx.precipitation.toFixed(1)} mm/h · ${t('vis')} ${(wx.visibility / 1000).toFixed(1)} ${t('km')}<br/>` +
+    `${t('Wind')} ${Math.round(wx.windDirection)}° / ${Math.round(wx.windSpeed)} G${Math.round(wx.windGusts)} ${t('km/h')}<br/>` +
+    t('Crosswind on this road ≈ {v} km/h from the {s}', { v: Math.abs(w.wind.crosswind).toFixed(0), s: t(w.wind.side) });
 }
 
 export default function MapView({
@@ -254,14 +255,14 @@ export default function MapView({
       mk.addTo(map.current);
       roadBadges.current.push(mk);
     };
-    for (const t of roadInfo?.tunnels || []) {
-      const p = at(t.from);
-      add(pill(`🚇 ${t.lengthM >= 1000 ? (t.lengthM / 1000).toFixed(1) + ' km' : Math.round(t.lengthM) + ' m'}`, '#111827', '#111827', '#fff'),
-        [p.lon, p.lat], `Tunnel${t.name ? ' ' + t.name : ''} – ${Math.round(t.lengthM)} m. Lights on!`);
+    for (const tu of roadInfo?.tunnels || []) {
+      const p = at(tu.from);
+      add(pill(`🚇 ${tu.lengthM >= 1000 ? (tu.lengthM / 1000).toFixed(1) + ' ' + t('km') : Math.round(tu.lengthM) + ' m'}`, '#111827', '#111827', '#fff'),
+        [p.lon, p.lat], t('Tunnel {n} – {m} m. Lights on!', { n: tu.name || '', m: Math.round(tu.lengthM) }));
     }
     for (const u of roadInfo?.unpaved || []) {
       const p = at(u.from);
-      add(pill(`🟤 ${(u.lengthM / 1000).toFixed(1)} km`, '#92400e', '#fef3c7', '#78350f'), [p.lon, p.lat], `Unpaved (${u.surface}) for ${(u.lengthM / 1000).toFixed(1)} km`);
+      add(pill(`🟤 ${(u.lengthM / 1000).toFixed(1)} ${t('km')}`, '#92400e', '#fef3c7', '#78350f'), [p.lon, p.lat], t('Unpaved ({s}) for {n} km', { s: u.surface, n: (u.lengthM / 1000).toFixed(1) }));
     }
     // Speed-camera signs: red-ringed speed-limit disc (or 📷 when the limit is unknown).
     for (const c of routeCameras) {
@@ -269,7 +270,7 @@ export default function MapView({
       el.style.cssText = 'display:flex;align-items:center;gap:2px;cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))';
       el.innerHTML = `<div style="width:30px;height:30px;border-radius:50%;background:#fff;border:4px solid #dc2626;display:flex;align-items:center;justify-content:center;font:800 12px system-ui;color:#0f172a">${c.maxspeed || '📷'}</div>` +
         (c.maxspeed ? '<div style="font-size:15px">📷</div>' : '');
-      add(el, [c.lon, c.lat], `${c.name || 'Speed camera'}${c.maxspeed ? ` – limit ${c.maxspeed}` : ''}`, 'center');
+      add(el, [c.lon, c.lat], `${c.name || t('Speed camera')}${c.maxspeed ? ` – ${t('limit {n}', { n: c.maxspeed })}` : ''}`, 'center');
     }
   }, [track, roadInfo, routeCameras]);
 
