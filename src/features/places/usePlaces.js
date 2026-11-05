@@ -11,6 +11,25 @@ const MAX_RECENTS = 6;
 export function usePlaces() {
   const [places, setPlaces] = useStoredState('ridewx.places.v1', DEFAULT_PLACES);
   const [recents, setRecents] = useStoredState('ridewx.recents.v1', []);
+  // Saved routes: { id, from: place|null (null = my location), to: place }
+  const [routes, setRoutes] = useStoredState('ridewx.routes.v1', []);
+
+  const saveRoute = useCallback((from, to) => {
+    const key = (p) => (p ? `${p.lat?.toFixed(4)},${p.lon?.toFixed(4)}` : 'me');
+    setRoutes((rs) => {
+      // Same pair in either direction counts as the same route (it's reversible).
+      const exists = rs.some((r) => (key(r.from) === key(from) && key(r.to) === key(to)) || (key(r.from) === key(to) && key(r.to) === key(from)));
+      return exists ? rs : [...rs, { id: `r${Date.now()}`, from, to }];
+    });
+  }, [setRoutes]);
+  const removeRoute = useCallback((id) => setRoutes((rs) => rs.filter((r) => r.id !== id)), [setRoutes]);
+
+  /** "home", "Work", "gym" typed in a box → the saved place with that name. */
+  const findByName = useCallback((text) => {
+    const t = (text || '').trim().toLocaleLowerCase();
+    if (!t) return null;
+    return places.find((p) => p.lat != null && p.name.toLocaleLowerCase() === t) || null;
+  }, [places]);
 
   const savePlace = useCallback((place) => {
     setPlaces((ps) => {
@@ -41,5 +60,5 @@ export function usePlaces() {
 
   const clearRecents = useCallback(() => setRecents([]), [setRecents]);
 
-  return { places, recents, savePlace, removePlace, addRecent, clearRecents };
+  return { places, recents, routes, savePlace, removePlace, addRecent, clearRecents, saveRoute, removeRoute, findByName };
 }

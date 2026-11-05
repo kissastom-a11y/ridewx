@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import MapView from './components/MapView.jsx';
-import RouteForm, { nowLocal } from './features/routeWeather/RouteForm.jsx';
+import RouteForm, { nowLocal, showVal } from './features/routeWeather/RouteForm.jsx';
 import RouteWeatherPanel from './features/routeWeather/RouteWeatherPanel.jsx';
 import { useRouteWeather } from './features/routeWeather/useRouteWeather.js';
 import CrosswindIndicator from './features/crosswind/CrosswindIndicator.jsx';
@@ -32,6 +32,12 @@ export default function App() {
   const [trafficKey, setTrafficKey] = useStoredState('ridewx.tomtomKey', '');
   const [showTraffic, setShowTraffic] = useStoredState('ridewx.showTraffic', true);
   const [trafficSetup, setTrafficSetup] = useState(false);
+  // Form values: '' | typed text | saved place object
+  const [fromVal, setFromVal] = useState('');
+  const [toVal, setToVal] = useState('');
+  const [startTime, setStartTime] = useState(nowLocal());
+  const [lastPlan, setLastPlan] = useState(null); // { from: place|null, to: place } for "Save route"
+  const [routeSaved, setRouteSaved] = useState(false);
 
   // Location is requested as soon as the app opens (that's when the browser asks permission).
   const { position, error: gpsError } = useGeolocation({
@@ -46,15 +52,60 @@ export default function App() {
 
   const myLocation = position ? { lat: position.lat, lon: position.lon, label: 'My location' } : null;
 
-  const plan = useCallback(async ({ from, to, startTime, name }) => {
-    setLocalErr(null);
-    const origin = from || myLocation;
-    if (!origin) { setLocalErr('Your location isn\'t available yet – allow location access or type a start point.'); return; }
-    const res = await rw.plan({ from: origin, to, startTime, trafficKey: trafficKey || null });
-    if (res) pl.addRecent({ ...res.destination, name: name || (typeof to === 'string' ? to : to.name) });
-  }, [myLocation, rw, trafficKey, pl]);
+  /** Form value → something the planner understands: saved place, my location (null), or text to geocode. */
+  const resolveVal = useCallback((v) => {
+    if (v && typeof v === 'object') return v;
+    if (!v || !v.trim()) return null;
+    return pl.findByName(v) || v.trim();
+  }, [pl]);
 
-  const goTo = (dest) => plan({ from: null, to: { lat: dest.lat, lon: dest.lon, label: dest.label || dest.name }, startTime: nowLocal(), name: dest.name });
+  const asPoint = (v) => (v && typeof v === 'object' ? { lat: v.lat, lon: v.lon, label: v.label || v.name } : v);
+
+  const runPlan = useCallback(async (fromV, toV, when) => {
+    setLocalErr(null);
+    setRouteSaved(false);
+    const f = resolveVal(fromV);
+    const t = resolveVal(toV);
+    if (!t) return;
+    const origin = f ? asPoint(f) : myLocation;
+    if (!origin) { setLocalErr('Your location isn\'t available yet – allow location access or type a start point.'); return; }
+    const res = await rw.plan({ from: origin, to: asPoint(t), startTime: when || nowLocal(), trafficKey: trafficKey || null });
+    if (!res) return;
+    // Remember both ends as place objects so the route can be saved & reversed.
+    const toPlace = typeof t === 'object' ? t : { icon: '📍', name: t.split(',')[0], lat: res.destination.lat, lon: res.destination.lon, label: res.destination.label };
+    const fromPlace = !f ? null : typeof f === 'object' ? f : { icon: '📍', name: f.split(',')[0], lat: res.origin.lat, lon: res.origin.lon, label: res.origin.label };
+    setLastPlan({ from: fromPlace, to: toPlace });
+    pl.addRecent({ ...res.destination, name: toPlace.name });
+  }, [resolveVal, myLocation, rw, trafficKey, pl]);
+
+  const goTo = (dest) => {
+    const place = { icon: dest.icon || '🕘', name: dest.name, lat: dest.lat, lon: dest.lon, label: dest.label };
+    setFromVal('');
+    setToVal(place);
+    setStartTime(nowLocal());
+    runPlan('', place);
+  };
+
+  const goRoute = (r, reverse) => {
+    const a = reverse ? r.to : r.from;
+    const b = reverse ? r.from : r.to;
+    if (!b) { // reversing "my location → X" means X → my location
+      if (!myLocation) { setLocalErr('Your location isn\'t available yet.'); return; }
+    }
+    const fromV = a || '';
+    const toV = b || { icon: '📍', name: 'My location', ...myLocation };
+    setFromVal(fromV);
+    setToVal(toV);
+    setStartTime(nowLocal());
+    runPlan(fromV, toV);
+  };
+
+  const swap = () => {
+    const f = fromVal || (myLocation ? { icon: '📍', name: 'My location', ...myLocation } : '');
+    setFromVal(toVal);
+    setToVal(f);
+    if (rw.route) runPlan(toVal, f, startTime); // already had a route → show the reverse straight away
+  };
 
   const startRide = (sim) => {
     unlockAudio(); // must happen inside this tap
@@ -138,11 +189,21 @@ export default function App() {
               onSave={pl.savePlace}
               onRemove={pl.removePlace}
               onClearRecents={pl.clearRecents}
+              routes={pl.routes}
+              onGoRoute={goRoute}
+              onRemoveRoute={pl.removeRoute}
             />
-            <RouteForm onPlan={plan} busy={busy} />
+            <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
+              onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} />
             {rw.status === 'routing' && <p className="text-xs text-slate-400">Finding route{trafficKey ? ' + live traffic' : ''}…</p>}
             {rw.status === 'weather' && <p className="text-xs text-slate-400">Fetching weather for each point at your arrival time…</p>}
             {(rw.error || localErr) && <p className="text-xs text-red-400">{localErr || rw.error}</p>}
+            {rw.route && lastPlan && rw.status === 'ready' && (
+              <button disabled={routeSaved} onClick={() => { pl.saveRoute(lastPlan.from, lastPlan.to); setRouteSaved(true); }}
+                className="w-full rounded-lg bg-slate-800 py-2 text-sm text-slate-200 ring-1 ring-slate-700 disabled:text-emerald-400">
+                {routeSaved ? '✓ Saved to My routes' : `⭐ Save route: ${showVal(lastPlan.from) || '📍 My location'} → ${showVal(lastPlan.to)}`}
+              </button>
+            )}
             <RouteWeatherPanel route={rw.route} waypoints={rw.waypoints} onSelect={(w) => setFocus({ ...w, t: Date.now() })}
               onStart={rw.route && !riding ? () => startRide(false) : null} />
             <button onClick={() => setTrafficSetup(true)} className="text-xs text-slate-500 underline">

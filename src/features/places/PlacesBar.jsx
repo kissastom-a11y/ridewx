@@ -9,7 +9,9 @@ import { geocode } from '../../services/geocode.js';
 
 const ICONS = ['⭐', '🏋️', '🏫', '🛒', '⛽', '❤️', '🍽️', '🏍️'];
 
-export default function PlacesBar({ places, recents, onGo, onSave, onRemove, onClearRecents, position }) {
+const lbl = (p) => (p ? `${p.icon || '📍'} ${p.name}` : '📍 My location');
+
+export default function PlacesBar({ places, recents, routes = [], onGo, onGoRoute, onRemoveRoute, onSave, onRemove, onClearRecents, position }) {
   const [editing, setEditing] = useState(null); // place object being edited
   const [editMode, setEditMode] = useState(false);
   const [text, setText] = useState('');
@@ -87,6 +89,27 @@ export default function PlacesBar({ places, recents, onGo, onSave, onRemove, onC
               <button onClick={() => { onRemove(editing.id); setEditing(null); }} className="rounded-lg bg-red-900/70 px-3 py-1.5">Remove</button>
             )}
             <button onClick={() => setEditing(null)} className="ml-auto rounded-lg px-3 py-1.5 text-slate-400">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {routes.length > 0 && !editing && (
+        <div>
+          <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">My routes</div>
+          <div className="space-y-1">
+            {routes.map((r) => (
+              <div key={r.id} className="flex gap-1">
+                <button onClick={() => onGoRoute(r, false)}
+                  className="flex min-w-0 flex-1 items-center gap-1 rounded-lg bg-slate-800/70 px-3 py-2 text-left text-sm active:bg-slate-700">
+                  <span className="truncate">{lbl(r.from)}</span><span className="text-slate-500">→</span><span className="truncate">{lbl(r.to)}</span>
+                </button>
+                <button onClick={() => onGoRoute(r, true)} title="Reverse direction"
+                  className="w-11 shrink-0 rounded-lg bg-slate-800/70 text-lg active:bg-slate-700">⇄</button>
+                {editMode && (
+                  <button onClick={() => onRemoveRoute(r.id)} className="w-11 shrink-0 rounded-lg bg-red-900/70">✕</button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
