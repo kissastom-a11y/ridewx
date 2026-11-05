@@ -156,3 +156,36 @@ describe('engine load DSP', () => {
     expect(updateCorrection(1, 44, 40)).toBeCloseTo(1.05, 5);
   });
 });
+
+import { InterferenceGate, ProfileLearner } from '../src/features/engineLoad/engineDsp.js';
+import { exposureAt } from '../src/services/elevation.js';
+
+describe('interference gate', () => {
+  const learner = new ProfileLearner(50);
+  for (let i = 0; i < 50; i++) learner.add({ powerDb: -40, flux: 0.3 + (i % 3) * 0.1, hiDb: -60 + (i % 2) * 0.5, centroidHz: 150 });
+  const profile = learner.finish();
+  it('a single throttle step does not trip it', () => {
+    const g = new InterferenceGate(profile);
+    let r;
+    for (let i = 0; i < 20; i++) r = g.step({ flux: i === 5 ? 9 : 0.3, hiDb: i < 5 ? -60 : -50 });
+    expect(r.interfering).toBe(false);
+  });
+  it('music-like rhythm in 1–4 kHz trips it and is labelled voice', () => {
+    const g = new InterferenceGate(profile);
+    let r;
+    for (let i = 0; i < 15; i++) r = g.step({ flux: 0.3, hiDb: i % 4 === 0 ? -45 : -60 });
+    expect(r.interfering).toBe(true);
+    expect(r.reason).toBe('voice');
+  });
+});
+
+describe('terrain exposure', () => {
+  // 20 km route, flat at 100 m with a 250 m-high pass at km 10
+  const profile = Array.from({ length: 21 }, (_, k) => ({ distM: k * 1000, elev: k === 10 ? 350 : k === 9 || k === 11 ? 250 : 100 }));
+  it('boosts wind on the pass, not on the flat', () => {
+    const pass = exposureAt(profile, 10000);
+    expect(pass.exposed).toBe(true);
+    expect(pass.factor).toBeGreaterThan(1.2);
+    expect(exposureAt(profile, 2000).factor).toBe(1);
+  });
+});

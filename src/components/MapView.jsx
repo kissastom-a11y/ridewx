@@ -41,7 +41,7 @@ function wpPopup(w) {
 }
 
 export default function MapView({
-  segments, waypoints, cameras, activeIds, position, follow, onUserPan, focus, theme = 'day', traffic = null,
+  segments, waypoints, cameras, activeIds, position, heading = null, follow, onUserPan, focus, theme = 'day', traffic = null,
 }) {
   const el = useRef(null);
   const map = useRef(null);
@@ -51,6 +51,11 @@ export default function MapView({
   const followRef = useRef(follow);
   const panRef = useRef(onUserPan);
   const firstFix = useRef(true);
+  const headingRef = useRef(heading);
+  headingRef.current = heading;
+  const lastCenter = useRef(null);
+  const posRef = useRef(position);
+  posRef.current = position;
   const badges = useRef([]);
   trafficRef.current = traffic;
   followRef.current = follow;
@@ -172,6 +177,28 @@ export default function MapView({
         .setPopup(new maplibregl.Popup({ maxWidth: '260px', offset: 18 }).setHTML(wpPopup(w)));
       if (map.current) mk.addTo(map.current);
       badges.current.push(mk);
+
+      // Wind vector on the WINDWARD side of the road, pointing at it.
+      // The box is rotated by the wind's FROM bearing (true) and aligned to the
+      // map, so its "top" faces where the wind comes from – the arrow drawn at
+      // the top pointing to the centre therefore blows across the road exactly
+      // as the real wind does, whatever way you rotate the map.
+      const sev = { green: '#22c55e', orange: '#f97316', red: '#dc2626' }[w.wind.severity];
+      const spd = w.weather.windSpeed * (w.exposure?.factor || 1);
+      const len = Math.min(34, 14 + spd * 0.6);
+      const sw = Math.min(7, 2.5 + spd / 10);
+      const box = document.createElement('div');
+      box.style.cssText = 'width:120px;height:120px;pointer-events:none';
+      box.innerHTML = `<svg viewBox="0 0 120 120" width="120" height="120" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">
+        <line x1="60" y1="${46 - len}" x2="60" y2="40" stroke="${sev}" stroke-width="${sw}" stroke-linecap="round"/>
+        <path d="M${60 - sw - 4} 38 L${60 + sw + 4} 38 L60 50 Z" fill="${sev}"/>
+        ${w.wind.severity !== 'green' ? `<text x="60" y="${40 - len}" text-anchor="middle" font-size="12" font-weight="700" fill="${sev}" stroke="#fff" stroke-width="3" paint-order="stroke">${Math.round(spd)}</text>` : ''}
+      </svg>`;
+      const arrow = new maplibregl.Marker({ element: box, rotationAlignment: 'map', pitchAlignment: 'map' })
+        .setLngLat([w.lon, w.lat])
+        .setRotation(w.weather.windDirection);
+      if (map.current) arrow.addTo(map.current);
+      badges.current.push(arrow);
     });
 
     data.current.route = route;
@@ -207,22 +234,39 @@ export default function MapView({
   useEffect(() => {
     const m = map.current;
     if (!m || !position) return;
-    marker.current.setLngLat([position.lon, position.lat]).setRotation(position.heading ?? 0).addTo(m);
-    if (follow) {
+    marker.current.setLngLat([position.lon, position.lat]).setRotation(headingRef.current ?? 0).addTo(m);
+    const moved = !lastCenter.current || Math.hypot(position.lat - lastCenter.current[0], position.lon - lastCenter.current[1]) > 2e-5;
+    if (follow && moved) {
+      lastCenter.current = [position.lat, position.lon];
       m.easeTo({
         center: [position.lon, position.lat],
-        bearing: position.heading ?? m.getBearing(), // heading-up
+        bearing: headingRef.current ?? m.getBearing(), // heading-up
+        easing: (t) => t, // linear – consecutive 1 Hz fixes blend into continuous motion
         pitch: 50,
         zoom: Math.max(m.getZoom(), 15.5),
         // Shift the puck toward the bottom so you see more road ahead.
         offset: [0, Math.round(m.getContainer().clientHeight * 0.22)],
-        duration: 900,
+        duration: 1000,
       });
     } else if (firstFix.current && !segments?.length) {
       m.flyTo({ center: [position.lon, position.lat], zoom: 14 });
     }
     firstFix.current = false;
   }, [position, follow]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!follow) lastCenter.current = null; }, [follow]);
+
+  // ── instant heading (compass ~15 Hz): rotate puck, and the map when following ──
+  useEffect(() => {
+    const m = map.current;
+    if (!m || heading == null) return;
+    marker.current?.setRotation(heading);
+    // While a position glide is running it already carries the bearing; otherwise rotate now.
+    if (follow && !m.isEasing() && posRef.current) {
+      // Rotate around the puck (which sits below centre), not around the screen centre.
+      m.easeTo({ center: [posRef.current.lon, posRef.current.lat], bearing: heading,
+        offset: [0, Math.round(m.getContainer().clientHeight * 0.22)], duration: 0 });
+    }
+  }, [heading, follow]);
 
   // ── fly to a point on request ──
   useEffect(() => {

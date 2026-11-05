@@ -10,17 +10,31 @@
  *   pushing the vehicle left. Because θ is a FROM angle, the arrow tail sits
  *   on the side the wind comes from – exactly like a METAR wind barb.
  */
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { analyzeWind, CROSSWIND_THRESHOLDS } from '../../lib/wind.js';
 
 const SEV_COLOR = { green: '#22c55e', orange: '#f97316', red: '#dc2626' };
 const C = 100; // SVG centre
+
+/**
+ * Keep the displayed angle continuous (…, 350, 365, 370 …) so the CSS transition
+ * always turns the short way instead of spinning 340° backwards across north.
+ */
+function useContinuousAngle(a) {
+  const ref = useRef(null);
+  if (a == null) return null;
+  if (ref.current == null) ref.current = a;
+  else ref.current += ((((a - ref.current) % 360) + 540) % 360) - 180;
+  return ref.current;
+}
 
 export default function CrosswindIndicator({ wind, heading, speedKmh, headingSource }) {
   const a = useMemo(
     () => (wind && heading != null ? analyzeWind(wind, heading, speedKmh || 0) : null),
     [wind, heading, speedKmh],
   );
+
+  const cont = useContinuousAngle(a ? a.relAngle : null);
 
   if (!wind) return <Shell><p className="text-xs text-slate-400">Waiting for wind data…</p></Shell>;
   if (!a) return <Shell><p className="text-xs text-slate-400">Waiting for heading – start moving…</p></Shell>;
@@ -45,7 +59,7 @@ export default function CrosswindIndicator({ wind, heading, speedKmh, headingSou
           <path d={`M${C} ${C - 22} L${C + 11} ${C + 16} L${C} ${C + 9} L${C - 11} ${C + 16} Z`} fill="#e2e8f0" />
 
           {/* Wind arrow: drawn at 12 o'clock pointing at centre, rotated by θ */}
-          <g transform={`rotate(${a.relAngle} ${C} ${C})`}>
+          <g style={{ transform: `rotate(${cont}deg)`, transformOrigin: `${C}px ${C}px`, transition: 'transform 120ms linear' }}>
             <line x1={C} y1={10} x2={C} y2={C - 34} stroke={color} strokeWidth={w} strokeLinecap="round" />
             <path d={`M${C - 9} ${C - 42} L${C + 9} ${C - 42} L${C} ${C - 28} Z`} fill={color} />
           </g>

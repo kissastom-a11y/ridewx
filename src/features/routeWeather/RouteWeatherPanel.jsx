@@ -9,6 +9,9 @@
 import { useState } from 'react';
 import { HAZARD_COLORS, HAZARD_LABELS } from './hazard.js';
 import { weatherIcon, weatherText, compass } from './weatherIcons.js';
+import { WindGlyph } from './RideAhead.jsx';
+
+const SEV = { green: '#22c55e', orange: '#f97316', red: '#dc2626' };
 
 const fmtTime = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : `${Math.round(s / 60)} min`);
@@ -72,6 +75,8 @@ export default function RouteWeatherPanel({ route, waypoints, destName, onSelect
               <span className="tabular-nums text-slate-400">{fmtTime(w.etaUnix)}</span>
               <span className="text-2xl leading-tight">{weatherIcon(w.weather.weatherCode, w.etaUnix)}</span>
               <span className="font-semibold tabular-nums text-white">{Math.round(w.weather.temperature)}°</span>
+              <WindGlyph rel={w.wind.relAngle} color={SEV[w.wind.severity]} speed={w.weather.windSpeed} size={20} />
+              {w.exposure?.exposed && <span className="text-[10px]">⛰</span>}
               <span className="tabular-nums text-[10px] text-slate-500">{i === waypoints.length - 1 ? '🏁' : `${(w.distM / 1000).toFixed(0)} km`}</span>
             </button>
           ))}

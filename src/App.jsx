@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import MapView from './components/MapView.jsx';
 import RouteForm, { nowLocal, showVal } from './features/routeWeather/RouteForm.jsx';
 import RouteWeatherPanel from './features/routeWeather/RouteWeatherPanel.jsx';
+import RideAhead from './features/routeWeather/RideAhead.jsx';
 import { useRouteWeather } from './features/routeWeather/useRouteWeather.js';
 import CrosswindIndicator from './features/crosswind/CrosswindIndicator.jsx';
 import { useLiveWind } from './features/crosswind/useLiveWind.js';
@@ -14,6 +15,7 @@ import { usePlaces } from './features/places/usePlaces.js';
 import TrafficSetup from './features/traffic/TrafficSetup.jsx';
 import { useGeolocation } from './hooks/useGeolocation.js';
 import { useWakeLock } from './hooks/useWakeLock.js';
+import { useCompass, fuseHeading, requestCompassPermission } from './hooks/useCompass.js';
 import { useStoredState } from './lib/storage.js';
 
 const fab = 'flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-lg text-slate-800 shadow-lg active:bg-slate-200';
@@ -47,6 +49,11 @@ export default function App() {
     speedFactor: 10,
   });
   useWakeLock(riding);
+  const [compassOn, setCompassOn] = useState(!(window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission === 'function'));
+  const compass = useCompass(compassOn);
+  // In simulation, ignore the real compass so the replay's heading drives everything.
+  const fused = fuseHeading(position, riding && simulate ? null : compass);
+  const enableCompass = () => { if (!compassOn) requestCompassPermission().then((ok) => ok && setCompassOn(true)); };
   const wind = useLiveWind(riding ? position : null);
   const { cameras, active } = useCameraProximity(riding ? position : null, { muted });
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
@@ -111,6 +118,7 @@ export default function App() {
 
   const startRide = (sim) => {
     unlockAudio(); // must happen inside this tap
+    enableCompass(); // iOS asks for motion & orientation access here
     setSimulate(sim);
     setRiding(true);
     setFollow(true);
@@ -124,6 +132,7 @@ export default function App() {
   };
 
   const locate = () => {
+    enableCompass();
     if (!position) return;
     if (riding) setFollow(true);
     else setFocus({ lat: position.lat, lon: position.lon, zoom: 15, t: Date.now() });
@@ -140,6 +149,7 @@ export default function App() {
           cameras={cameras}
           activeIds={activeIds}
           position={position}
+          heading={fused.heading}
           follow={riding && follow}
           onUserPan={() => setFollow(false)}
           focus={focus}
@@ -249,8 +259,9 @@ export default function App() {
                 <button onClick={() => setMuted((m) => !m)} className="rounded-lg bg-slate-700 px-3 text-sm">{muted ? '🔇' : '🔊'}</button>
               </div>
             )}
+            <RideAhead waypoints={rw.waypoints} profile={rw.profile} spots={rw.spots} route={rw.route} position={position} />
             {riding && (
-              <CrosswindIndicator wind={wind} heading={position?.heading} speedKmh={position?.speedKmh} headingSource={position?.headingSource} />
+              <CrosswindIndicator wind={wind} heading={fused.heading} speedKmh={position?.speedKmh} headingSource={fused.source} />
             )}
             <EngineLoadGauge speedKmh={riding && position ? position.speedKmh : null} />
           </>

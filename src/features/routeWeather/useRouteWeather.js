@@ -8,6 +8,7 @@ import { geocode } from '../../services/geocode.js';
 import { fetchRoute } from '../../services/osrm.js';
 import { fetchRouteForecast } from '../../services/openMeteo.js';
 import { fetchTrafficSummary } from '../../services/tomtom.js';
+import { fetchElevations, exposureAt } from '../../services/elevation.js';
 import { sampleRoute } from '../../lib/geo.js';
 import { analyzeWind } from '../../lib/wind.js';
 import { classifyHazard } from './hazard.js';
@@ -18,7 +19,7 @@ export const WAYPOINT_INTERVAL_M = 12000; // spec: 10–15 km
 const resolve = (x, signal) => (typeof x === 'string' ? geocode(x, { signal }) : Promise.resolve(x));
 
 export function useRouteWeather() {
-  const [state, setState] = useState({ status: 'idle', error: null, route: null, waypoints: [], segments: [] });
+  const [state, setState] = useState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [] });
   const abortRef = useRef(null);
 
   const plan = useCallback(async ({ from, to, startTime, trafficKey }) => {
@@ -52,16 +53,47 @@ export function useRouteWeather() {
       }));
 
       setState((s) => ({ ...s, status: 'weather', route: { ...route, origin, destination } }));
-      const weather = await fetchRouteForecast(wps, { signal });
+      // Elevation profile (~1 km spacing, ≤ 400 points) fetched in parallel with the weather.
+      const profStep = Math.max(1000, route.distanceM / 400);
+      const profPts = sampleRoute(route.coords, route.segDist, route.segTime, profStep);
+      const [weather, elevs] = await Promise.all([
+        fetchRouteForecast(wps, { signal }),
+        fetchElevations(profPts, { signal }),
+      ]);
+      const profile = profPts.map((p, i) => ({ lat: p.lat, lon: p.lon, distM: p.distM, elev: elevs[i] }));
 
       const waypoints = wps.map((w, i) => {
         const wx = weather[i];
-        const hazard = classifyHazard(wx);
+        // Terrain exposure boosts wind on ridges/passes (see services/elevation.js).
+        const exposure = exposureAt(profile, w.distM);
+        const k = exposure.factor;
+        const hazard = classifyHazard({ ...wx, windGusts: wx.windGusts * k });
+        if (exposure.exposed && wx.windGusts * k >= 30) {
+          hazard.reasons.push(`Exposed high ground (+${Math.round((k - 1) * 100)}% wind)`);
+          hazard.level = Math.max(hazard.level, 1);
+        }
         // Route-level crosswind estimate using the ROAD bearing at that point
-        // (live GPS heading replaces this while riding – see Feature 2).
-        const wind = analyzeWind({ speed: wx.windSpeed, direction: wx.windDirection, gusts: wx.windGusts }, w.bearing, 90);
-        return { ...w, weather: wx, hazard, wind };
+        // (live heading replaces this while riding – see Feature 2).
+        const wind = analyzeWind({ speed: wx.windSpeed * k, direction: wx.windDirection, gusts: wx.windGusts * k }, w.bearing, 90);
+        return { ...w, weather: wx, hazard, wind, exposure };
       });
+
+      // Exposed crests anywhere on the route (not only at the 12 km weather points):
+      // local maxima of Δh along the 1 km profile, with the nearest point's wind boosted.
+      const ex = profile.map((p) => exposureAt(profile, p.distM));
+      const spots = [];
+      for (let i = 1; i < profile.length - 1; i++) {
+        if (!ex[i].exposed || ex[i].dh < ex[i - 1].dh || ex[i].dh < ex[i + 1].dh) continue;
+        const near = waypoints.reduce((a, w) => (Math.abs(w.distM - profile[i].distM) < Math.abs(a.distM - profile[i].distM) ? w : a), waypoints[0]);
+        if (spots.some((sp) => Math.abs(sp.distM - profile[i].distM) < 3000)) continue;
+        spots.push({
+          ...profile[i],
+          factor: ex[i].factor,
+          dh: ex[i].dh,
+          wind: Math.round(near.weather.windSpeed * ex[i].factor),
+          gusts: Math.round(near.weather.windGusts * ex[i].factor),
+        });
+      }
 
       // Build coloured polyline segments between consecutive waypoints using
       // the REAL geometry slice, not a straight line. Each segment takes the
@@ -74,7 +106,7 @@ export function useRouteWeather() {
         segments.push({ points: pts, level: Math.max(a.hazard.level, b.hazard.level) });
       }
 
-      setState({ status: 'ready', error: null, route: { ...route, origin, destination, startUnix, traffic }, waypoints, segments });
+      setState({ status: 'ready', error: null, route: { ...route, origin, destination, startUnix, traffic }, waypoints, segments, profile, spots });
       return { origin, destination };
     } catch (err) {
       if (err.name === 'AbortError') return null;
@@ -85,7 +117,7 @@ export function useRouteWeather() {
 
   const clear = useCallback(() => {
     abortRef.current?.abort();
-    setState({ status: 'idle', error: null, route: null, waypoints: [], segments: [] });
+    setState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [], spots: [] });
   }, []);
 
   return { ...state, plan, clear };
