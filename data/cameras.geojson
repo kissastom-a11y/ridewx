@@ -1,0 +1,12 @@
+{
+  "type": "FeatureCollection",
+  "_comment": "SAMPLE DATA ONLY – these points are placeholders around Athens for testing the proximity engine. They are NOT real camera locations. Replace with a verified dataset (e.g. OSM nodes tagged highway=speed_camera, exported via Overpass). Schema: type = speed_camera | redlight_camera | buslane_camera | enforcement_zone; direction = enforced travel bearing in degrees true (optional, omit for both directions); maxspeed in km/h (optional).",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.7905, 38.0105] }, "properties": { "id": "demo-001", "type": "speed_camera", "maxspeed": 80, "direction": 20, "name": "Demo – Kifisias Ave northbound" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.7350, 37.9600] }, "properties": { "id": "demo-002", "type": "redlight_camera", "name": "Demo – Syngrou Ave junction" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.7270, 37.9838] }, "properties": { "id": "demo-003", "type": "buslane_camera", "name": "Demo – city-centre bus lane" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.8520, 38.0470] }, "properties": { "id": "demo-004", "type": "speed_camera", "maxspeed": 100, "name": "Demo – Attiki Odos section" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.6980, 38.0150] }, "properties": { "id": "demo-005", "type": "enforcement_zone", "radius_m": 800, "name": "Demo – frequent mobile radar zone" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [23.6000, 38.0300] }, "properties": { "id": "demo-006", "type": "speed_camera", "maxspeed": 90, "direction": 290, "name": "Demo – westbound highway" } }
+  ]
+}
