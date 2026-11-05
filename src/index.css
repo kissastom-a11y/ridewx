@@ -5,3 +5,6 @@ body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 .leaflet-container { background: #1e293b; font: inherit; }
 
 @keyframes windflow { to { stroke-dashoffset: -17; } }
+
+/* keep the map compass clear of the trip bar */
+.maplibregl-ctrl-bottom-right { margin-bottom: 64px; }

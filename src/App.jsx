@@ -18,6 +18,8 @@ import { parseCommand } from './features/voice/commands.js';
 import { useSpeechCommands, speechCommandsSupported } from './features/voice/useSpeechCommands.js';
 import { REPLY } from './features/voice/replies.js';
 import VoiceOverlay from './features/voice/VoiceOverlay.jsx';
+import TripBar from './features/guidance/TripBar.jsx';
+import { openSpotify } from './features/music/openSpotify.js';
 import { instructionText } from './lib/voice.js';
 import { weatherText } from './features/routeWeather/weatherIcons.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
@@ -309,6 +311,7 @@ export default function App() {
       case 'night': setTheme('night'); speak(REPLY.ok()); break;
       case 'day': setTheme('day'); speak(REPLY.ok()); break;
       case 'help': speak(REPLY.help()); break;
+      case 'music': speak(REPLY.music()); setTimeout(openSpotify, 1800); break;
       default: speak(REPLY.unknown(c.heard));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -346,10 +349,11 @@ export default function App() {
         />
         {riding && <ManeuverBanner guidance={guidance} />}
         <VoiceOverlay sc={sc} />
+        {rw.route && rw.status === 'ready' && <TripBar route={rw.route} progressM={progressM} riding={riding} />}
         {riding && <WindEdges wind={wind} heading={fused.heading} screenUp={follow ? fused.heading : mapBearing} />}
-        {riding && <SpeedHud speed={speedInfo.speed} limit={speedInfo.limit} over={speedInfo.over} />}
+        {riding && <SpeedHud speed={speedInfo.speed} limit={speedInfo.limit} over={speedInfo.over} lifted={!!rw.route} />}
         {riding && (engineSnap || fuel) && (
-          <div className="pointer-events-none absolute bottom-24 left-3 z-[900] flex gap-1.5">
+          <div className={`pointer-events-none absolute left-3 z-[900] flex gap-1.5 ${rw.route ? 'bottom-[168px]' : 'bottom-24'}`}>
             {engineSnap && <EngineChip snap={engineSnap} />}
             {fuel && (
               <div className="rounded-full bg-slate-900/85 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg">
@@ -370,6 +374,7 @@ export default function App() {
           {speechCommandsSupported && (
             <button className={`${fab} ${sc.listening ? 'animate-pulse !bg-red-600 !text-white' : '!bg-sky-600 !text-white'}`} onClick={onMic} title="Voice command">🎤</button>
           )}
+          <button className={`${fab} !bg-[#1DB954] !text-white`} onClick={openSpotify} title={t('Open Spotify')}>🎵</button>
           <button className={fab} onClick={() => setTheme(theme === 'day' ? 'night' : 'day')} title="Day / night map">
             {theme === 'day' ? '🌙' : '☀️'}
           </button>
@@ -379,12 +384,12 @@ export default function App() {
 
         {riding && !follow && (
           <button onClick={() => setFollow(true)}
-            className="absolute bottom-4 left-1/2 z-[900] -translate-x-1/2 rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-lg">
+            className={`absolute left-1/2 z-[900] -translate-x-1/2 rounded-full ${rw.route ? 'bottom-[80px]' : 'bottom-4'} bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-lg`}>
             {t('◎ Re-centre')}
           </button>
         )}
         {gpsError && (
-          <div className="absolute inset-x-3 bottom-3 z-[900] rounded-lg bg-amber-500/95 p-2 text-xs font-medium text-slate-900">
+          <div className={`absolute inset-x-3 z-[900] rounded-lg bg-amber-500/95 ${rw.route ? 'bottom-[76px]' : 'bottom-3'} p-2 text-xs font-medium text-slate-900`}>
             {t('📍 {e}. Allow location for this site in your browser settings, then reopen the app.', { e: gpsError })}
           </div>
         )}

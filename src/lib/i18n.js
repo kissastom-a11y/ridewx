@@ -106,6 +106,10 @@ const EL = {
   'Unpaved ({s}) for {n} km': 'Χωματόδρομος ({s}) για {n} χλμ',
   'Speed camera': 'Κάμερα ταχύτητας',
   'limit {n}': 'όριο {n}',
+  Arrival: 'Άφιξη',
+  'Time left': 'Απομένει',
+  Distance: 'Απόσταση',
+  'Open Spotify': 'Άνοιγμα Spotify',
   // ── route results ──
   arrive: 'άφιξη',
   'no traffic delays': 'χωρίς καθυστερήσεις',

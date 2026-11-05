@@ -45,6 +45,7 @@ export const REPLY = {
   eta: (unix, leftM) => (el() ? `Φτάνετε περίπου στις ${time(unix)}, σε ${distText(leftM)}.` : `You'll arrive around ${time(unix)}, in ${distText(leftM)}.`),
   noRoute: () => (el() ? 'Δεν υπάρχει ενεργή διαδρομή. Πείτε για παράδειγμα «πάμε σπίτι».' : 'No active route. Try saying "take me home".'),
   limit: (k) => (k ? (el() ? `Το όριο εδώ είναι ${k}.` : `The limit here is ${k}.`) : (el() ? 'Δεν ξέρω το όριο σε αυτόν τον δρόμο.' : "I don't know the limit on this road.")),
+  music: () => (el() ? 'Ανοίγω το Spotify. Γυρίστε πίσω για οδηγίες.' : 'Opening Spotify. Come back for directions.'),
   ok: () => (el() ? 'Εντάξει.' : 'OK.'),
   muted: () => (el() ? 'Σίγαση.' : 'Muted.'),
   stopped: () => (el() ? 'Τέλος διαδρομής. Καλή συνέχεια!' : 'Ride ended. See you next time!'),

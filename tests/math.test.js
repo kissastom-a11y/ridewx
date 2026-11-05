@@ -394,3 +394,10 @@ describe('voice commands (Greek + English)', () => {
     expect(parseCommand(['πάμε σπύτι', 'πάμε σπίτι'], { places }).place.id).toBe('home');
   });
 });
+
+describe('voice: music', () => {
+  it('opens Spotify in both languages', () => {
+    expect(parseCommand(['Βάλε μουσική'], { places: [] }).type).toBe('music');
+    expect(parseCommand(['open Spotify'], { places: [] }).type).toBe('music');
+  });
+});

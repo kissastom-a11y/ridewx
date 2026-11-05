@@ -34,6 +34,7 @@ const NAV = /^(?:(?:πηγαινε|παμε|οδηγησε|πλοηγησε|δρ
 const W = (alts) => new RegExp(`(?:^|\\s)(?:${alts})(?:\\s|$)`);
 
 const R = {
+  music: /(μουσικη|τραγουδι|σποτιφαι|spotify|music|songs?|playlist)/,
   stop: W('σταματα|σταματησε|τελοσ διαδρομησ|τερματισμοσ|stop|end ride|finish ride|cancel route'),
   mute: W('σιγαση|σωπα|ησυχια|κλεισε τη φωνη|mute|quiet|silence|shut up'),
   unmute: W('ανοιξε τη φωνη|μιλα|ενεργοποιησε τη φωνη|unmute|sound on|voice on'),
@@ -73,6 +74,7 @@ function parseOne(raw, places) {
 
   if (R.stop.test(s)) return { type: 'stop', heard };
   if (R.mute.test(s)) return { type: 'mute', heard };
+  if (R.music.test(s)) return { type: 'music', heard };
   if (R.unmute.test(s)) return { type: 'unmute', heard };
 
   // Saved places, by their name or the built-in synonyms.
