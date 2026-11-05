@@ -10,8 +10,22 @@
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon.svg" />
     <title>RideWX</title>
-    <script type="module" crossorigin src="./assets/index-DZXfCL6J.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Celaw_YW.css">
+    <script>
+      // Self-heal: if an app file fails to load (stale cache after an update),
+      // clear the offline cache once and reload instead of showing a blank page.
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (!t || (t.tagName !== 'SCRIPT' && t.tagName !== 'LINK')) return;
+        if (sessionStorage.getItem('ridewx-healed')) return;
+        sessionStorage.setItem('ridewx-healed', '1');
+        var sw = navigator.serviceWorker ? navigator.serviceWorker.getRegistrations() : Promise.resolve([]);
+        sw.then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+          .then(function () { return window.caches ? caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }) : 0; })
+          .finally(function () { location.reload(); });
+      }, true);
+    </script>
+    <script type="module" crossorigin src="./assets/index-BtvBwTqX.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Chwm1wU6.css">
   </head>
   <body class="bg-slate-900">
     <div id="root"></div>
