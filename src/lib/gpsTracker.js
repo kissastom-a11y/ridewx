@@ -85,6 +85,7 @@ export function trackerStep(state, fix) {
     headingSource: next.headingSource || 'none',
     timestamp: fix.timestamp,
     reliable: (fix.accuracy ?? 0) <= MAX_ACCEPTABLE_ACCURACY_M,
+    altitude: Number.isFinite(fix.altitude) ? fix.altitude : null,
   };
   return next;
 }

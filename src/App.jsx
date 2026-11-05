@@ -27,6 +27,11 @@ import SpeedHud from './features/speed/SpeedHud.jsx';
 import WindEdges from './features/crosswind/WindEdges.jsx';
 import { say, GR, setVoiceEnabled, hasGreekVoice } from './lib/voice.js';
 import { analyzeWind } from './lib/wind.js';
+import FuelPanel, { VehiclePicker } from './features/fuel/FuelPanel.jsx';
+import { useFuel } from './features/fuel/useFuel.js';
+import { useVibration, requestMotionPermission } from './features/fuel/useVibration.js';
+import { presetById } from './features/fuel/vehicles.js';
+import { updateCorrection as fuelCorrection } from './features/fuel/fuelModel.js';
 
 const NO_CAMS = [];
 const fab = 'flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-lg text-slate-800 shadow-lg active:bg-slate-200';
@@ -97,6 +102,23 @@ export default function App() {
   const guidance = useGuidance({ riding, progress: progressM, guide: rw.route?.guide, speedKmh: position?.speedKmh, muted });
   // 🚦 speed limit + speeding warning
   const speedInfo = useSpeedLimit({ riding, position, heading: fused.heading, progress: progressM, ranges: rw.roadInfo?.speeds, muted });
+  // ⛽ Fuel: vehicle (chosen once, remembered) + per-vehicle fill-up calibration
+  const [vs, setVs] = useStoredState('ridewx.vehicle.v1', { presetId: null, cal: {} });
+  const vehicle = presetById(vs.presetId);
+  const vstate = (vehicle && vs.cal?.[vehicle.id]) || { correction: 1, litresSinceFill: 0, fills: 0 };
+  const setVstate = (patch) => setVs((o) => ({ ...o, cal: { ...(o.cal || {}), [o.presetId]: { ...((o.cal || {})[o.presetId] || { correction: 1, litresSinceFill: 0, fills: 0 }), ...patch } } }));
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Always listen: on iPhone events simply start flowing once permission is granted in the
+  // Start-ride tap; newer Chrome also exposes requestPermission but may never answer it.
+  const vib = useVibration(riding, position?.speedKmh);
+  const headwindKmh = wind && fused.heading != null ? analyzeWind(wind, fused.heading, 0).headwind : 0;
+  const fuel = useFuel({
+    riding, position, vehicle, correction: vstate.correction, progress: progressM, profile: rw.profile,
+    headwindKmh, tempC: wind?.temperature, engineSnap, vib,
+  });
+  const fuelRef = useRef(fuel);
+  fuelRef.current = fuel;
+
   // 💨 strong crosswind warning (once per 5 min)
   const xwWarned = useRef(0);
   useEffect(() => {
@@ -188,12 +210,19 @@ export default function App() {
     unlockAudio(); // must happen inside this tap (also unlocks the Greek voice on iOS)
     enableCompass(); // iOS asks for motion & orientation access here
     if (!muted) say(GR.rideStart);
+    requestMotionPermission(); // iOS: vibration sensor prompt
+    if (!vehicle) setPickerOpen(true);
     setSimulate(sim);
     setRiding(true);
     setFollow(true);
     setTab('ride');
   };
-  const stopRide = () => { setRiding(false); setFollow(false); };
+  const stopRide = () => {
+    // Add this trip's fuel to the "since last fill-up" counter for calibration.
+    if (vehicle && fuelRef.current?.tripL > 0) setVstate({ litresSinceFill: vstate.litresSinceFill + fuelRef.current.tripL });
+    setRiding(false);
+    setFollow(false);
+  };
 
   const onTrafficButton = () => {
     if (!trafficKey) setTrafficSetup(true);
@@ -232,7 +261,16 @@ export default function App() {
         {riding && <ManeuverBanner guidance={guidance} />}
         {riding && <WindEdges wind={wind} heading={fused.heading} screenUp={follow ? fused.heading : mapBearing} />}
         {riding && <SpeedHud speed={speedInfo.speed} limit={speedInfo.limit} over={speedInfo.over} />}
-        {riding && engineSnap && <EngineChip snap={engineSnap} />}
+        {riding && (engineSnap || fuel) && (
+          <div className="pointer-events-none absolute bottom-24 left-3 z-[900] flex gap-1.5">
+            {engineSnap && <EngineChip snap={engineSnap} />}
+            {fuel && (
+              <div className="rounded-full bg-slate-900/85 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg">
+                ⛽ {fuel.overrun ? '0.0' : fuel.l100 != null ? fuel.l100.toFixed(1) : fuel.lph.toFixed(1) + ' L/h'}
+              </div>
+            )}
+          </div>
+        )}
         {riding && (
           <div className={`absolute inset-x-0 h-0 ${guidance ? 'top-[84px]' : 'top-0'}`}>
             {active.length ? <CameraAlert active={active} />
@@ -368,11 +406,15 @@ export default function App() {
                 iPhone: Settings → Accessibility → Spoken Content → Voices → Greek → Melina.
               </p>
             )}
-            <EngineLoadGauge speedKmh={riding && position ? position.speedKmh : null} autoStart={riding} onSnap={setEngineSnap} />
+            <FuelPanel fuel={fuel} vehicle={vehicle} vstate={vstate} vib={vib} riding={riding}
+              onOpenPicker={() => setPickerOpen(true)}
+              onRefuel={(l) => setVstate({ correction: fuelCorrection(vstate.correction, l, vstate.litresSinceFill), litresSinceFill: 0, fills: vstate.fills + 1 })} />
+            <EngineLoadGauge speedKmh={riding && position ? position.speedKmh : null} autoStart={riding} onSnap={setEngineSnap} kind={vehicle?.kind} />
           </>
         )}
       </div>
 
+      {pickerOpen && <VehiclePicker selectedId={vs.presetId} onPick={(id) => setVs((o) => ({ ...o, presetId: id }))} onClose={() => setPickerOpen(false)} />}
       {trafficSetup && <TrafficSetup currentKey={trafficKey} onSave={(k) => { setTrafficKey(k); setShowTraffic(true); }} onClose={() => setTrafficSetup(false)} />}
     </div>
   );
@@ -388,7 +430,7 @@ function EngineChip({ snap }) {
   };
   const [c, label] = snap.phase === 'learning' ? map.learning : snap.calibrating ? ['#64748b', '… CAL'] : map[snap.state];
   return (
-    <div className="pointer-events-none absolute bottom-24 left-3 z-[900] rounded-full px-2.5 py-1 text-[11px] font-bold text-white shadow-lg"
+    <div className="rounded-full px-2.5 py-1 text-[11px] font-bold text-white shadow-lg"
       style={{ background: c, opacity: snap.interfering ? 0.55 : 1 }}>
       {label}{snap.interfering ? ' ⏸' : ''}
     </div>

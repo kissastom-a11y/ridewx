@@ -21,8 +21,12 @@ const STATE = {
   red: { color: '#dc2626', label: 'HEAVY', sub: 'Wide-open throttle' },
 };
 
-export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap }) {
-  const [cfg, setCfg] = useState(initial);
+export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap, kind = null }) {
+  const [cfgRaw, setCfg] = useState(initial);
+  // The microphone band follows the vehicle chosen in the fuel card (car vs motorcycle).
+  const cfg = kind && kind !== cfgRaw.vehicle
+    ? { ...cfgRaw, vehicle: kind, ...DEFAULTS[kind], profile: cfgRaw.profiles?.[kind] ?? null }
+    : { ...cfgRaw, profile: cfgRaw.profiles?.[cfgRaw.vehicle] ?? cfgRaw.profile ?? null };
   const [showSettings, setShowSettings] = useState(false);
   const [refuel, setRefuel] = useState('');
   const baseRef = useRef(cfg.litresSinceFill);
@@ -33,7 +37,9 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap })
     setCfg((c) => { const n = { ...c, litresSinceFill: baseRef.current + sessionLitres }; save(n); return n; });
   }, []);
 
-  const onProfile = useCallback((profile) => update({ profile }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const onProfile = useCallback((profile) => {
+    setCfg((c) => { const k = kind || c.vehicle; const n = { ...c, profiles: { ...(c.profiles || {}), [k]: profile } }; save(n); return n; });
+  }, [kind]);
   const { snap, status, error, start, stop } = useEngineAudio({ speedKmh, settings: cfg, profile: cfg.profile, onProfile, onTripUpdate });
   const on = status === 'on' || status === 'learning';
   const learning = snap?.phase === 'learning';
@@ -106,7 +112,7 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap })
             <div className="h-2 rounded transition-all" style={{ width: `${Math.min(100, ((snap?.loadDb || 0) / 15) * 100)}%`, background: st?.color || '#64748b' }} />
           </div>
           {!cfg.showFuel && on && st && <p className="mt-1 text-[11px] text-slate-400">Engine load from sound – relative to your normal cruising.</p>}
-          {cfg.showFuel && <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
+          {false && <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
             <div><dt className="text-slate-400">Now (est.)</dt>
               <dd className="font-semibold tabular-nums text-slate-100">
                 {snap?.instL100 != null ? `${snap.instL100.toFixed(1)} L/100` : snap?.instLph != null ? `${snap.instLph.toFixed(2)} L/h` : '—'}
@@ -121,7 +127,7 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap })
         </div>
       </div>
 
-      {cfg.showFuel && speedKmh == null && on && <p className="text-[11px] text-amber-400">Start the ride (GPS) too – fuel estimates need speed.</p>}
+      {false && <p className="text-[11px] text-amber-400">Start the ride (GPS) too – fuel estimates need speed.</p>}
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       <div className="flex gap-2">
@@ -133,45 +139,10 @@ export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap })
 
       {showSettings && (
         <div className="space-y-2 rounded-lg bg-slate-900/60 p-2 text-xs text-slate-300">
-          <div className="flex gap-1">
-            {Object.entries(DEFAULTS).map(([k, d]) => (
-              <button key={k} disabled={on}
-                onClick={() => update({ vehicle: k, ...d, correction: 1, litresSinceFill: 0, fills: 0, profile: null })}
-                className={`flex-1 rounded py-1 ${cfg.vehicle === k ? 'bg-slate-600 text-white' : 'bg-slate-800'} disabled:opacity-50`}>
-                {d.label}
-              </button>
-            ))}
-          </div>
           <div className="flex items-center justify-between">
             <span>Engine sound profile: {cfg.profile ? `learned ${new Date(cfg.profile.learnedAt).toLocaleDateString()}` : 'not learned yet'}</span>
             <button disabled={on} onClick={() => begin(true)} className="rounded bg-violet-700 px-2 py-1 disabled:opacity-50">Re-learn</button>
           </div>
-          <label className="flex items-center justify-between gap-2">
-            <span>Show fuel estimate <span className="text-slate-500">(only meaningful once you enter your vehicle's real consumption and log fill-ups)</span></span>
-            <input type="checkbox" checked={!!cfg.showFuel} onChange={(e) => update({ showFuel: e.target.checked })} />
-          </label>
-          {cfg.showFuel && <>
-          <label className="flex items-center justify-between">Typical consumption (L/100 km)
-            <input type="number" step="0.1" inputMode="decimal" className={inputCls} value={cfg.ratedL100} disabled={on}
-              onChange={(e) => update({ ratedL100: parseFloat(e.target.value) || 0 })} />
-          </label>
-          <label className="flex items-center justify-between">Idle burn (L/h)
-            <input type="number" step="0.05" inputMode="decimal" className={inputCls} value={cfg.idleLph} disabled={on}
-              onChange={(e) => update({ idleLph: parseFloat(e.target.value) || 0 })} />
-          </label>
-          <div className="border-t border-slate-700 pt-2">
-            <p className="mb-1">⛽ <b>Fill-up calibration</b> – fill to full, then after the next full fill-up enter the litres the pump showed:</p>
-            <div className="flex gap-2">
-              <input inputMode="decimal" placeholder="litres" className={`${inputCls} flex-1 text-left`} value={refuel} disabled={on}
-                onChange={(e) => setRefuel(e.target.value)} />
-              <button onClick={applyRefuel} disabled={on} className="rounded bg-emerald-700 px-3 disabled:opacity-50">Save</button>
-            </div>
-            <p className="mt-1 text-slate-500">
-              Calibration factor ×{cfg.correction.toFixed(2)} · {cfg.fills} fill-up{cfg.fills === 1 ? '' : 's'} logged
-              {cfg.fills < 2 ? ' – estimates firm up after 2–3 fill-ups.' : '.'}
-            </p>
-          </div>
-          </>}
           <p className="text-slate-500">Audio is analysed on the phone and never recorded or uploaded. Best placement: car – dash/console mount;
             motorcycle – tank bag or jacket pocket (out of the wind).</p>
         </div>

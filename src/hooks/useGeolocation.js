@@ -62,6 +62,7 @@ export function useGeolocation({ enabled, simulateRoute = null, speedFactor = 10
           accuracy: p.coords.accuracy,
           speed: p.coords.speed, // m/s or null
           heading: p.coords.heading, // deg true, null/NaN when stationary
+          altitude: p.coords.altitude, // metres (GNSS), may be null
           timestamp: p.timestamp,
         }),
       (e) => setError(e.code === 1 ? 'Location permission denied' : e.message),

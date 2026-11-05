@@ -302,3 +302,53 @@ describe('speed limits', () => {
     expect(speedLimitAt(r, 1000).kmh).toBe(130);
   });
 });
+
+import { fuelRate, airDensity, gradeAt, updateCorrection as fuelCorrection } from '../src/features/fuel/fuelModel.js';
+import { presetById } from '../src/features/fuel/vehicles.js';
+
+describe('physics fuel model', () => {
+  const car = presetById('compact');
+  const moto = presetById('naked');
+  const flat = (kmh, extra = {}) => fuelRate(car, { speedKmh: kmh, accelMs2: 0, grade: 0, headwindKmh: 0, ...extra });
+  it('matches real-world figures', () => {
+    expect(flat(90).l100).toBeGreaterThan(4.8);
+    expect(flat(90).l100).toBeLessThan(6.2);
+    expect(flat(130).l100).toBeGreaterThan(7);
+    expect(flat(130).l100).toBeLessThan(9.5);
+    const m = fuelRate(moto, { speedKmh: 90 }).l100;
+    expect(m).toBeGreaterThan(3);
+    expect(m).toBeLessThan(5);
+  });
+  it('headwind, climbing and full throttle cost fuel; downhill coasting is free', () => {
+    expect(flat(90, { headwindKmh: 30 }).l100).toBeGreaterThan(flat(90).l100 * 1.25);
+    expect(flat(90, { grade: 0.05 }).l100).toBeGreaterThan(flat(90).l100 * 1.8);
+    expect(flat(90, { loadDb: 12 }).lph).toBeCloseTo(flat(90).lph * 1.2, 1);
+    expect(flat(90, { grade: -0.06 }).lph).toBe(0);
+  });
+  it('idle only while the engine runs (start-stop)', () => {
+    expect(flat(0).lph).toBeCloseTo(car.idleLph, 5);
+    expect(flat(0, { engineOn: false }).lph).toBe(0);
+  });
+  it('air density: hot or high air is thinner', () => {
+    expect(airDensity(15, 0)).toBeCloseTo(1.225, 3);
+    expect(airDensity(35, 1000)).toBeLessThan(1.05);
+  });
+  it('grade from the elevation profile', () => {
+    const prof = [0, 1000, 2000, 3000].map((d) => ({ distM: d, elev: d * 0.04 }));
+    expect(gradeAt(prof, 1500)).toBeCloseTo(0.04, 3);
+  });
+  it('fill-up correction moves halfway, bounded', () => {
+    expect(fuelCorrection(1, 44, 40)).toBeCloseTo(1.05, 5);
+  });
+});
+
+import { vibrationRms, ENGINE_ON_RMS } from '../src/features/fuel/useVibration.js';
+
+describe('vibration', () => {
+  const gen = (amp, n = 90) => Array.from({ length: n }, (_, i) => [amp * Math.sin(i * 2.1), 9.81 + amp * Math.cos(i * 1.7), amp * Math.sin(i * 0.9 + 1)]);
+  it('gravity is removed; an idling engine reads as ON, a still phone as OFF', () => {
+    expect(vibrationRms(gen(0))).toBeCloseTo(0, 5);
+    expect(vibrationRms(gen(0.15))).toBeGreaterThan(ENGINE_ON_RMS);
+    expect(vibrationRms(gen(0.005))).toBeLessThan(ENGINE_ON_RMS);
+  });
+});
