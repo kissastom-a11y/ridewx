@@ -1,10 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapView from './components/MapView.jsx';
 import RouteForm, { nowLocal, showVal } from './features/routeWeather/RouteForm.jsx';
 import RouteWeatherPanel from './features/routeWeather/RouteWeatherPanel.jsx';
 import RideAhead from './features/routeWeather/RideAhead.jsx';
 import { useRouteWeather } from './features/routeWeather/useRouteWeather.js';
-import CrosswindIndicator from './features/crosswind/CrosswindIndicator.jsx';
 import { useLiveWind } from './features/crosswind/useLiveWind.js';
 import CameraAlert from './features/cameras/CameraAlert.jsx';
 import { useCameraProximity } from './features/cameras/useCameraProximity.js';
@@ -21,6 +20,13 @@ import { locateOnTrack } from './lib/track.js';
 import RoadSummary from './features/roadInfo/RoadSummary.jsx';
 import RoadAlert from './features/roadInfo/RoadAlert.jsx';
 import { useRoadAlerts } from './features/roadInfo/useRoadAlerts.js';
+import { useGuidance } from './features/guidance/useGuidance.js';
+import ManeuverBanner from './features/guidance/ManeuverBanner.jsx';
+import { useSpeedLimit } from './features/speed/useSpeedLimit.js';
+import SpeedHud from './features/speed/SpeedHud.jsx';
+import WindEdges from './features/crosswind/WindEdges.jsx';
+import { say, GR, setVoiceEnabled, hasGreekVoice } from './lib/voice.js';
+import { analyzeWind } from './lib/wind.js';
 
 const NO_CAMS = [];
 const fab = 'flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-lg text-slate-800 shadow-lg active:bg-slate-200';
@@ -82,6 +88,25 @@ export default function App() {
   }, [rw.track, osmCams, cameras]);
 
   const roadAlert = useRoadAlerts({ progress: progressM, roadInfo: rw.roadInfo, riding, muted });
+  const [mapBearing, setMapBearing] = useState(0);
+  const [engineSnap, setEngineSnap] = useState(null);
+  const [sheetOpen, setSheetOpen] = useState(false); // while riding the panel stays small so the map gets the screen
+  useEffect(() => { setVoiceEnabled(!muted); }, [muted]);
+
+  // 🗣️ Greek turn-by-turn
+  const guidance = useGuidance({ riding, progress: progressM, guide: rw.route?.guide, speedKmh: position?.speedKmh, muted });
+  // 🚦 speed limit + speeding warning
+  const speedInfo = useSpeedLimit({ riding, position, heading: fused.heading, progress: progressM, ranges: rw.roadInfo?.speeds, muted });
+  // 💨 strong crosswind warning (once per 5 min)
+  const xwWarned = useRef(0);
+  useEffect(() => {
+    if (!riding || muted || !wind || fused.heading == null) return;
+    const a = analyzeWind(wind, fused.heading, 0);
+    if (a.severity === 'red' && a.quadrant === 'cross' && Date.now() - xwWarned.current > 300000) {
+      xwWarned.current = Date.now();
+      say(GR.crosswind(a.side, Math.abs(a.gustCross)));
+    }
+  }, [riding, muted, wind, fused.heading]);
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
 
   const myLocation = position ? { lat: position.lat, lon: position.lon, label: 'My location' } : null;
@@ -143,9 +168,26 @@ export default function App() {
     if (rw.route) runPlan(toVal, f, startTime); // already had a route → show the reverse straight away
   };
 
+  // ↺ Off the route for 4 fixes in a row (and GPS is good) → new route from here.
+  const offCount = useRef(0);
+  const lastReroute = useRef(0);
+  useEffect(() => {
+    if (!riding || simulate || !rw.track || !position || rw.status !== 'ready' || !lastPlan?.to) return;
+    const loc = locateOnTrack(rw.track, position.lat, position.lon);
+    const off = !loc || loc.off > 70;
+    offCount.current = off && (position.accuracy ?? 99) < 50 ? offCount.current + 1 : 0;
+    if (offCount.current >= 4 && Date.now() - lastReroute.current > 20000) {
+      lastReroute.current = Date.now();
+      offCount.current = 0;
+      if (!muted) say(GR.rerouting, { urgent: true });
+      runPlan('', lastPlan.to, nowLocal());
+    }
+  }, [position]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startRide = (sim) => {
-    unlockAudio(); // must happen inside this tap
+    unlockAudio(); // must happen inside this tap (also unlocks the Greek voice on iOS)
     enableCompass(); // iOS asks for motion & orientation access here
+    if (!muted) say(GR.rideStart);
     setSimulate(sim);
     setRiding(true);
     setFollow(true);
@@ -177,6 +219,7 @@ export default function App() {
           activeIds={activeIds}
           position={position}
           heading={fused.heading}
+          onBearing={setMapBearing}
           track={rw.track}
           roadInfo={rw.roadInfo}
           routeCameras={routeCameras}
@@ -186,8 +229,16 @@ export default function App() {
           theme={theme}
           traffic={trafficKey && showTraffic ? trafficKey : null}
         />
-        {riding && (active.length ? <CameraAlert active={active} />
-          : <RoadAlert alert={roadAlert} distance={roadAlert && progressM != null ? roadAlert.at - progressM : null} />)}
+        {riding && <ManeuverBanner guidance={guidance} />}
+        {riding && <WindEdges wind={wind} heading={fused.heading} screenUp={follow ? fused.heading : mapBearing} />}
+        {riding && <SpeedHud speed={speedInfo.speed} limit={speedInfo.limit} over={speedInfo.over} />}
+        {riding && engineSnap && <EngineChip snap={engineSnap} />}
+        {riding && (
+          <div className={`absolute inset-x-0 h-0 ${guidance ? 'top-[84px]' : 'top-0'}`}>
+            {active.length ? <CameraAlert active={active} />
+              : <RoadAlert alert={roadAlert} distance={roadAlert && progressM != null ? roadAlert.at - progressM : null} />}
+          </div>
+        )}
 
         {/* Floating buttons */}
         <div className="absolute right-3 top-32 z-[900] flex flex-col gap-2">
@@ -212,7 +263,10 @@ export default function App() {
       </div>
 
       {/* Bottom sheet */}
-      <div className="z-[1000] max-h-[60dvh] space-y-3 overflow-y-auto rounded-t-2xl bg-slate-900 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-[0_-8px_24px_rgba(0,0,0,.4)]">
+      <div className={`z-[1000] ${riding && tab === 'ride' && !sheetOpen ? 'max-h-[30dvh]' : 'max-h-[60dvh]'} space-y-3 overflow-y-auto rounded-t-2xl bg-slate-900 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-[0_-8px_24px_rgba(0,0,0,.4)]`}>
+        {riding && tab === 'ride' && (
+          <button onClick={() => setSheetOpen((o) => !o)} className="mx-auto -mt-1 block h-1.5 w-12 rounded-full bg-slate-600" aria-label="Expand panel" />
+        )}
         <div className="flex gap-1 rounded-lg bg-slate-800 p-1 text-sm">
           {['plan', 'ride'].map((t) => (
             <button key={t} onClick={() => setTab(t)}
@@ -308,15 +362,35 @@ export default function App() {
             )}
             <RideAhead waypoints={rw.waypoints} profile={rw.profile} spots={rw.spots} route={rw.route} position={position}
               progressM={progressM} roadInfo={rw.roadInfo} routeCameras={routeCameras} />
-            {riding && (
-              <CrosswindIndicator wind={wind} heading={fused.heading} speedKmh={position?.speedKmh} headingSource={fused.source} />
+            {riding && !hasGreekVoice() && (
+              <p className="rounded-lg bg-amber-500/15 p-2 text-[11px] text-amber-200">
+                🗣️ No Greek voice on this phone yet – install one for the best sound. Android: Settings → Text-to-speech → Google → Greek.
+                iPhone: Settings → Accessibility → Spoken Content → Voices → Greek → Melina.
+              </p>
             )}
-            <EngineLoadGauge speedKmh={riding && position ? position.speedKmh : null} />
+            <EngineLoadGauge speedKmh={riding && position ? position.speedKmh : null} autoStart={riding} onSnap={setEngineSnap} />
           </>
         )}
       </div>
 
       {trafficSetup && <TrafficSetup currentKey={trafficKey} onSave={(k) => { setTrafficKey(k); setShowTraffic(true); }} onClose={() => setTrafficSetup(false)} />}
+    </div>
+  );
+}
+
+/** Small engine-load pill on the map while riding. */
+function EngineChip({ snap }) {
+  const map = {
+    learning: ['#8b5cf6', `🧠 ${Math.round((snap.progress || 0) * 100)}%`],
+    green: ['#22c55e', '🟢 CRUISE'],
+    orange: ['#f97316', '🟠 LOAD'],
+    red: ['#dc2626', '🔴 HEAVY'],
+  };
+  const [c, label] = snap.phase === 'learning' ? map.learning : snap.calibrating ? ['#64748b', '… CAL'] : map[snap.state];
+  return (
+    <div className="pointer-events-none absolute bottom-24 left-3 z-[900] rounded-full px-2.5 py-1 text-[11px] font-bold text-white shadow-lg"
+      style={{ background: c, opacity: snap.interfering ? 0.55 : 1 }}>
+      {label}{snap.interfering ? ' ⏸' : ''}
     </div>
   );
 }

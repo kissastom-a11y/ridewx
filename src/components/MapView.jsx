@@ -42,7 +42,7 @@ function wpPopup(w) {
 }
 
 export default function MapView({
-  segments, waypoints, cameras, activeIds, position, heading = null, track = null, roadInfo = null, routeCameras = [], follow, onUserPan, focus, theme = 'day', traffic = null,
+  segments, waypoints, cameras, activeIds, position, heading = null, onBearing = null, track = null, roadInfo = null, routeCameras = [], follow, onUserPan, focus, theme = 'day', traffic = null,
 }) {
   const el = useRef(null);
   const map = useRef(null);
@@ -56,6 +56,8 @@ export default function MapView({
   headingRef.current = heading;
   const lastCenter = useRef(null);
   const posRef = useRef(position);
+  const bearingRef = useRef(onBearing);
+  bearingRef.current = onBearing;
   posRef.current = position;
   const badges = useRef([]);
   const roadBadges = useRef([]);
@@ -111,6 +113,7 @@ export default function MapView({
     });
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: false }), 'bottom-right');
     m.on('style.load', () => addOverlays(m));
+    m.on('rotate', () => bearingRef.current?.(m.getBearing()));
     m.on('dragstart', (e) => { if (e.originalEvent) panRef.current?.(); });
     m.on('click', 'cams', (e) => {
       new maplibregl.Popup({ closeButton: false }).setLngLat(e.features[0].geometry.coordinates).setText(e.features[0].properties.label).addTo(m);

@@ -3,3 +3,5 @@
 html, body, #root { height: 100%; margin: 0; }
 body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 .leaflet-container { background: #1e293b; font: inherit; }
+
+@keyframes windflow { to { stroke-dashoffset: -17; } }

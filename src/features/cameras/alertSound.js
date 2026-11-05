@@ -4,13 +4,18 @@
  * "Start ride" button tap, otherwise the first alert will be silent.
  * Speech output goes through to a Bluetooth helmet intercom like any media audio.
  */
+import { say, unlockVoice, GR } from '../../lib/voice.js';
+
 let ctx = null;
+
+/** Shared AudioContext (created in the Start-ride tap) – the engine monitor reuses it. */
+export const getAudioContext = () => ctx;
 
 export function unlockAudio() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') ctx.resume();
   // iOS also needs speechSynthesis primed inside a gesture.
-  if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+  unlockVoice();
 }
 
 function beep(freq, startAt, dur = 0.15) {
@@ -27,13 +32,6 @@ function beep(freq, startAt, dur = 0.15) {
   osc.stop(startAt + dur + 0.02);
 }
 
-const SPOKEN = {
-  speed_camera: 'Speed camera',
-  redlight_camera: 'Red light camera',
-  buslane_camera: 'Bus lane camera',
-  enforcement_zone: 'Enforcement zone',
-};
-
 export function playCameraAlert(cam) {
   if (ctx) {
     const t = ctx.currentTime;
@@ -41,14 +39,7 @@ export function playCameraAlert(cam) {
     [880, 1100, 1320].forEach((f, i) => beep(f, t + i * 0.2));
   }
   navigator.vibrate?.([200, 100, 200]);
-  if ('speechSynthesis' in window) {
-    const dist = Math.round(cam.distance / 50) * 50;
-    let text = `${SPOKEN[cam.type] || 'Camera'} in ${dist} metres`;
-    if (cam.maxspeed) text += `, limit ${cam.maxspeed}`;
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05;
-    setTimeout(() => window.speechSynthesis.speak(u), 700);
-  }
+  setTimeout(() => say(GR.camera(cam.distance, cam.maxspeed), { urgent: true }), 700);
 }
 
 /** Short two-tone chime + spoken message (tunnel / dirt-road warnings). */
@@ -59,9 +50,5 @@ export function announce(text) {
     beep(990, t + 0.22, 0.25);
   }
   navigator.vibrate?.([150, 80, 150]);
-  if ('speechSynthesis' in window) {
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05;
-    setTimeout(() => window.speechSynthesis.speak(u), 550);
-  }
+  setTimeout(() => say(text, { urgent: true }), 550);
 }

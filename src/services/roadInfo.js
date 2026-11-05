@@ -3,6 +3,7 @@
  *   - unpaved stretches (surface=gravel/dirt/… or highway=track)
  *   - tunnels (tunnel=yes on highways)
  *   - speed cameras (highway=speed_camera), with maxspeed / direction when tagged
+ *   - speed limits (maxspeed on the roads you'll drive; Greek defaults for motorway/trunk)
  *
  * One query, using Overpass's "around a polyline" filter on a simplified copy of
  * the route. Then every OSM way is MATCHED against the route: it only counts if
@@ -12,6 +13,7 @@
  * Best-effort: on any failure we return empty info and the rest of the app works.
  */
 import { locateOnTrack, mergeRanges, fastDist } from '../lib/track.js';
+import { parseMaxspeed } from './speedLimit.js';
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 const UNPAVED = 'unpaved|gravel|fine_gravel|dirt|ground|earth|sand|mud|compacted|grass|pebblestone|rock|gravel;ground';
@@ -69,6 +71,8 @@ export async function fetchRoadInfo(track, { signal } = {}) {
   way(around:25,${line})[highway=track];
   way(around:25,${line})[highway][tunnel=yes];
   node(around:60,${line})[highway=speed_camera];
+  way(around:20,${line})[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"][maxspeed];
+  way(around:20,${line})[highway~"^(motorway|trunk)$"][!maxspeed];
 );
 out tags geom qt;`;
   const json = await overpass(q, signal);
@@ -76,13 +80,18 @@ out tags geom qt;`;
   const unpaved = [];
   const tunnels = [];
   const cameras = [];
+  const speeds = [];
+  const unpavedRe = new RegExp(`^(${UNPAVED})$`);
   for (const el of json.elements || []) {
     const t = el.tags || {};
     if (el.type === 'way') {
       const r = matchWay(track, el.geometry);
       if (!r) continue;
-      if (t.tunnel && t.tunnel !== 'no') tunnels.push({ range: r, name: t.name || t['tunnel:name'] || '' });
-      else unpaved.push({ range: r, surface: t.surface || (t.highway === 'track' ? 'track' : 'unpaved') });
+      // One way can be several things at once (a motorway tunnel with a limit).
+      if (t.tunnel === 'yes') tunnels.push({ range: r, name: t.name || t['tunnel:name'] || '' });
+      if (t.highway === 'track' || (t.surface && unpavedRe.test(t.surface))) unpaved.push({ range: r, surface: t.surface || 'track' });
+      const lim = parseMaxspeed(t.maxspeed, t.highway);
+      if (lim) speeds.push({ from: r[0], to: r[1], ...lim });
     } else if (el.type === 'node' && t.highway === 'speed_camera') {
       const loc = locateOnTrack(track, el.lat, el.lon);
       if (!loc || loc.off > 60) continue;
@@ -116,5 +125,5 @@ out tags geom qt;`;
   for (const c of cameras.sort((a, b) => a.distM - b.distM)) {
     if (!cams.some((k) => fastDist(k.lat, k.lon, c.lat, c.lon) < 30)) cams.push(c);
   }
-  return { unpaved: unpavedRanges, tunnels: tunnelRanges, cameras: cams };
+  return { unpaved: unpavedRanges, tunnels: tunnelRanges, cameras: cams, speeds };
 }

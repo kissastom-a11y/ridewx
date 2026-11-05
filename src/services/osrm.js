@@ -32,13 +32,29 @@ export async function fetchRoute(origin, destination, { signal, exclude = [] } =
   const segDist = route.legs.flatMap((l) => l.annotation.distance);
   const segTime = route.legs.flatMap((l) => l.annotation.duration);
 
+  // Turn-by-turn maneuvers (for Greek voice guidance). step.name is the road
+  // you're on AFTER the maneuver – exactly what "turn right onto X" needs.
+  const maneuvers = [];
+  for (const leg of route.legs) for (const step of leg.steps || []) {
+    const m = step.maneuver || {};
+    if (!m.location) continue;
+    maneuvers.push({
+      lon: m.location[0],
+      lat: m.location[1],
+      type: m.type,
+      modifier: m.modifier,
+      exit: m.exit,
+      name: step.name || step.ref || '',
+    });
+  }
+
   // Every intersection in order, with the classes of the road leaving it.
   const intersections = [];
   for (const leg of route.legs) for (const step of leg.steps || []) for (const x of step.intersections || []) {
     intersections.push({ lon: x.location[0], lat: x.location[1], classes: x.classes || [] });
   }
 
-  return { coords, segDist, segTime, distanceM: route.distance, durationS: route.duration, intersections };
+  return { coords, segDist, segTime, distanceM: route.distance, durationS: route.duration, intersections, maneuvers };
 }
 
 /**

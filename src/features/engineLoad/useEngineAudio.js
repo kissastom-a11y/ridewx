@@ -18,6 +18,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { analyzeFrame, EngineLoadMonitor, ProfileLearner, InterferenceGate } from './engineDsp.js';
 import { readJSON } from '../../lib/storage.js';
+import { isSpeaking } from '../../lib/voice.js';
+import { getAudioContext } from '../cameras/alertSound.js';
 
 const FRAME_MS = 100;
 export const LEARN_SECONDS = () => readJSON('ridewx.debug.learnS', 60);
@@ -34,7 +36,9 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
     const r = rt.current;
     clearInterval(r.timer);
     r.stream?.getTracks().forEach((t) => t.stop());
-    r.ctx?.close().catch(() => {});
+    try { r.src?.disconnect(); } catch { /* already gone */ }
+    if (r.ownCtx) r.ctx?.close().catch(() => {}); // never close the shared context
+
     if (r.monitor) onTripUpdate?.(r.monitor.tripLitres);
     rt.current = {};
     setStatus('off');
@@ -45,8 +49,11 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
   const start = useCallback((relearn = false) => {
     setError(null);
     setStatus('starting');
-    // 1) Audio context NOW, inside the gesture (iOS).
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // 1) Audio context: reuse the one unlocked in the Start-ride tap (iOS needs a
+    //    gesture), so the monitor can also start automatically a moment later.
+    const shared = getAudioContext();
+    const ownCtx = !shared;
+    const ctx = shared || new (window.AudioContext || window.webkitAudioContext)();
     ctx.resume().catch(() => {});
 
     // 2) Then ask for the microphone.
@@ -91,6 +98,7 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
       let last = performance.now();
       let tick = 0;
       let silentFrames = 0;
+      let ttsHold = 0; // frames to ignore after the app's own voice (echo, reverb)
 
       const timer = setInterval(() => {
         const now = performance.now();
@@ -110,10 +118,14 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
         const frame = { ...base, flux, hiDb: hi };
         silentFrames = wide < -95 ? silentFrames + 1 : 0;
 
+        // Never learn from, or react to, the app's own Greek voice.
+        if (isSpeaking()) ttsHold = 8; else if (ttsHold > 0) ttsHold--;
+        const selfVoice = ttsHold > 0;
+
         let s;
         if (learner) {
-          learner.add(frame);
-          s = monitor.step(frame, speedRef.current, dt, false);
+          if (!selfVoice) learner.add(frame);
+          s = monitor.step(frame, speedRef.current, dt, selfVoice);
           s = { ...s, phase: 'learning', progress: learner.progress };
           if (learner.done) {
             const p = learner.finish();
@@ -124,7 +136,7 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
           }
         } else {
           const g = gate.step(frame);
-          s = { ...monitor.step(frame, speedRef.current, dt, g.interfering), phase: 'on', interferenceReason: g.reason };
+          s = { ...monitor.step(frame, speedRef.current, dt, g.interfering || selfVoice), phase: 'on', interferenceReason: selfVoice ? 'self' : g.reason };
         }
         s.micDb = wide;
         s.silent = silentFrames > 30;
@@ -132,10 +144,10 @@ export function useEngineAudio({ speedKmh, settings, profile, onProfile, onTripU
         if (tick % 100 === 0) onTripUpdate?.(monitor.tripLitres);
       }, FRAME_MS);
 
-      rt.current = { stream, ctx, timer, monitor };
+      rt.current = { stream, ctx, ownCtx, src, timer, monitor };
       setStatus(learner ? 'learning' : 'on');
     }).catch((err) => {
-      ctx.close().catch(() => {});
+      if (ownCtx) ctx.close().catch(() => {});
       setStatus('error');
       setError(err.name === 'NotAllowedError' ? 'Microphone permission denied – allow it for this site in your browser settings.' : err.message);
     });

@@ -248,3 +248,57 @@ describe('track projection', () => {
     expect(Math.abs(loc.distM - 18050)).toBeLessThan(25);
   });
 });
+
+import { distGreek, instructionGreek, GR } from '../src/lib/voice.js';
+import { guidanceStep, isActionable } from '../src/features/guidance/guidance.js';
+import { parseMaxspeed, speedLimitAt } from '../src/services/speedLimit.js';
+
+describe('Greek voice phrases', () => {
+  it('distances the way people say them', () => {
+    expect(distGreek(287)).toBe('300 μέτρα');
+    expect(distGreek(1000)).toBe('1 χιλιόμετρο');
+    expect(distGreek(1500)).toBe('1,5 χιλιόμετρα');
+  });
+  it('turns, roundabouts, ramps', () => {
+    expect(instructionGreek({ type: 'turn', modifier: 'right', name: 'Κηφισίας' }, 300)).toBe('Σε 300 μέτρα, στρίψτε δεξιά προς Κηφισίας.');
+    expect(instructionGreek({ type: 'roundabout', exit: 2 }, null)).toBe('Στον κυκλικό κόμβο, πάρτε τη δεύτερη έξοδο.');
+    expect(instructionGreek({ type: 'off ramp', modifier: 'slight right', name: 'Αττική Οδός' }, 1000)).toBe('Σε 1 χιλιόμετρο, πάρτε την έξοδο δεξιά προς Αττική Οδός.');
+    expect(GR.speeding(90)).toBe('Προσοχή, το όριο είναι 90.');
+  });
+});
+
+describe('turn-by-turn timing', () => {
+  const guide = [
+    { distM: 5000, type: 'turn', modifier: 'left', name: 'Α' },
+    { distM: 5100, type: 'turn', modifier: 'right', name: 'Β' },
+    { distM: 9000, type: 'arrive' },
+  ].filter(isActionable);
+  it('early, near, now – each once – and chains a turn that follows within 150 m', () => {
+    const said = new Set();
+    const at = (p, v) => guidanceStep(guide, p, v, said).speech;
+    expect(at(3000, 100)).toBe('Σε 2 χιλιόμετρα, στρίψτε αριστερά προς Α, και μετά, στρίψτε δεξιά προς Β.');
+    expect(at(3100, 100)).toBeNull();
+    expect(at(4520, 100)).toMatch(/^Σε 500 μέτρα, στρίψτε αριστερά/);
+    expect(at(4900, 100)).toMatch(/^Στρίψτε αριστερά προς Α, και μετά/);
+    expect(at(4950, 100)).toBeNull();
+  });
+  it('ignores "continue straight"', () => {
+    expect(isActionable({ type: 'new name', modifier: 'straight' })).toBe(false);
+    expect(isActionable({ type: 'continue', modifier: 'slight left' })).toBe(false);
+    expect(isActionable({ type: 'fork', modifier: 'slight left' })).toBe(true);
+  });
+});
+
+describe('speed limits', () => {
+  it('parses OSM maxspeed incl. Greek zones and defaults', () => {
+    expect(parseMaxspeed('90')).toEqual({ kmh: 90, explicit: true });
+    expect(parseMaxspeed('GR:urban')).toEqual({ kmh: 50, explicit: true });
+    expect(parseMaxspeed(undefined, 'motorway')).toEqual({ kmh: 130, explicit: false });
+    expect(parseMaxspeed(undefined, 'primary')).toBeNull();
+  });
+  it('prefers posted limits and the longest stretch', () => {
+    const r = [{ from: 0, to: 9000, kmh: 130, explicit: false }, { from: 4000, to: 6000, kmh: 100, explicit: true }, { from: 4900, to: 5100, kmh: 60, explicit: true }];
+    expect(speedLimitAt(r, 5000).kmh).toBe(100);
+    expect(speedLimitAt(r, 1000).kmh).toBe(130);
+  });
+});

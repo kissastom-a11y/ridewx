@@ -8,6 +8,7 @@ import { geocode } from '../../services/geocode.js';
 import { fetchRoute, classRanges } from '../../services/osrm.js';
 import { fetchRoadInfo } from '../../services/roadInfo.js';
 import { buildTrack, locateOnTrack } from '../../lib/track.js';
+import { isActionable } from '../guidance/guidance.js';
 import { fetchRouteForecast } from '../../services/openMeteo.js';
 import { fetchTrafficSummary } from '../../services/tomtom.js';
 import { fetchElevations, exposureAt } from '../../services/elevation.js';
@@ -52,6 +53,11 @@ export function useRouteWeather() {
       const track = buildTrack(route);
       const classes = classRanges(route.intersections, (la, lo) => locateOnTrack(track, la, lo), route.distanceM);
       route.tollKm = classes.toll.reduce((s, [a, b]) => s + (b - a), 0) / 1000;
+      // Voice-guidance maneuvers placed along the route (metres from start).
+      route.guide = (route.maneuvers || []).filter(isActionable).map((m) => ({
+        ...m,
+        distM: m.type === 'arrive' ? route.distanceM : locateOnTrack(track, m.lat, m.lon)?.distM,
+      })).filter((m) => m.distM != null).sort((a, b) => a.distM - b.distM);
 
       // Live traffic (optional): TomTom's traffic-aware time vs OSRM's free-flow
       // time gives a slow-down factor; we stretch every waypoint ETA by it so the

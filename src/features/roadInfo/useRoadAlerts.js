@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { announce } from '../cameras/alertSound.js';
+import { GR } from '../../lib/voice.js';
 
 export const ROAD_ALERT_M = 500;
 
@@ -29,8 +30,8 @@ export function useRoadAlerts({ progress, roadInfo, riding, muted }) {
         done.current.add(e.id);
         const lenTxt = e.len >= 1000 ? `${(e.len / 1000).toFixed(1)} kilometres` : `${Math.round(e.len / 10) * 10} metres`;
         const a = e.kind === 'tunnel'
-          ? { at: e.at, kind: 'tunnel', title: 'TUNNEL AHEAD', sub: `💡 Lights on · ${lenTxt}`, ahead, speech: 'Tunnel ahead. Lights on.' }
-          : { at: e.at, kind: 'unpaved', title: 'DIRT ROAD AHEAD', sub: `🟤 Unpaved for ${lenTxt}`, ahead, speech: `Dirt road ahead, ${lenTxt}.` };
+          ? { at: e.at, kind: 'tunnel', title: 'TUNNEL AHEAD', sub: `💡 Lights on · ${lenTxt}`, ahead, speech: GR.tunnel(e.len) }
+          : { at: e.at, kind: 'unpaved', title: 'DIRT ROAD AHEAD', sub: `🟤 Unpaved for ${lenTxt}`, ahead, speech: GR.dirt(e.len) };
         setAlert(a);
         if (!muted) announce(a.speech);
         clearTimeout(timer.current);

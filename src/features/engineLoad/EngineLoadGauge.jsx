@@ -2,7 +2,7 @@
  * Feature 4 UI: 3-state engine load display + estimated consumption + fill-up calibration.
  * Settings and the fuel-since-last-fill-up counter persist in localStorage.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULTS, updateCorrection } from './engineDsp.js';
 import { useEngineAudio } from './useEngineAudio.js';
 import { readJSON } from '../../lib/storage.js';
@@ -21,7 +21,7 @@ const STATE = {
   red: { color: '#dc2626', label: 'HEAVY', sub: 'Wide-open throttle' },
 };
 
-export default function EngineLoadGauge({ speedKmh }) {
+export default function EngineLoadGauge({ speedKmh, autoStart = false, onSnap }) {
   const [cfg, setCfg] = useState(initial);
   const [showSettings, setShowSettings] = useState(false);
   const [refuel, setRefuel] = useState('');
@@ -39,6 +39,13 @@ export default function EngineLoadGauge({ speedKmh }) {
   const learning = snap?.phase === 'learning';
 
   const begin = (relearn = false) => { baseRef.current = cfg.litresSinceFill; start(relearn); };
+
+  // Starts with the ride and stops with it – no extra taps when you're in a hurry.
+  useEffect(() => {
+    if (autoStart && status === 'off') begin(false);
+    if (!autoStart && on) stop();
+  }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onSnap?.(on ? snap : null); }, [snap, on]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyRefuel = () => {
     const litres = parseFloat(refuel.replace(',', '.'));
@@ -68,8 +75,9 @@ export default function EngineLoadGauge({ speedKmh }) {
       )}
       {on && !learning && snap?.interfering && (
         <Bubble color="#0ea5e9">
-          <span className="text-xl">{snap.interferenceReason === 'voice' ? '🎵' : '💨'}</span>{' '}
-          {snap.interferenceReason === 'voice' ? 'Music or voices – holding the reading' : 'Noise burst (wind/horn) – holding the reading'}
+          <span className="text-xl">{snap.interferenceReason === 'self' ? '🗣️' : snap.interferenceReason === 'voice' ? '🎵' : '💨'}</span>{' '}
+          {snap.interferenceReason === 'self' ? 'App speaking – ignoring its own voice'
+            : snap.interferenceReason === 'voice' ? 'Music or voices – holding the reading' : 'Noise burst (wind/horn) – holding the reading'}
         </Bubble>
       )}
       {on && snap?.silent && (
@@ -97,7 +105,8 @@ export default function EngineLoadGauge({ speedKmh }) {
           <div className="mt-1 h-2 rounded bg-slate-700">
             <div className="h-2 rounded transition-all" style={{ width: `${Math.min(100, ((snap?.loadDb || 0) / 15) * 100)}%`, background: st?.color || '#64748b' }} />
           </div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
+          {!cfg.showFuel && on && st && <p className="mt-1 text-[11px] text-slate-400">Engine load from sound – relative to your normal cruising.</p>}
+          {cfg.showFuel && <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
             <div><dt className="text-slate-400">Now (est.)</dt>
               <dd className="font-semibold tabular-nums text-slate-100">
                 {snap?.instL100 != null ? `${snap.instL100.toFixed(1)} L/100` : snap?.instLph != null ? `${snap.instLph.toFixed(2)} L/h` : '—'}
@@ -108,11 +117,11 @@ export default function EngineLoadGauge({ speedKmh }) {
               <dd className="tabular-nums text-slate-100">{snap ? `${snap.tripKm.toFixed(1)} km · ${snap.tripLitres.toFixed(2)} L` : '—'}</dd></div>
             <div><dt className="text-slate-400">Since fill-up</dt>
               <dd className="tabular-nums text-slate-100">{cfg.litresSinceFill.toFixed(1)} L</dd></div>
-          </dl>
+          </dl>}
         </div>
       </div>
 
-      {speedKmh == null && on && <p className="text-[11px] text-amber-400">Start the ride (GPS) too – fuel estimates need speed.</p>}
+      {cfg.showFuel && speedKmh == null && on && <p className="text-[11px] text-amber-400">Start the ride (GPS) too – fuel estimates need speed.</p>}
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       <div className="flex gap-2">
@@ -137,6 +146,11 @@ export default function EngineLoadGauge({ speedKmh }) {
             <span>Engine sound profile: {cfg.profile ? `learned ${new Date(cfg.profile.learnedAt).toLocaleDateString()}` : 'not learned yet'}</span>
             <button disabled={on} onClick={() => begin(true)} className="rounded bg-violet-700 px-2 py-1 disabled:opacity-50">Re-learn</button>
           </div>
+          <label className="flex items-center justify-between gap-2">
+            <span>Show fuel estimate <span className="text-slate-500">(only meaningful once you enter your vehicle's real consumption and log fill-ups)</span></span>
+            <input type="checkbox" checked={!!cfg.showFuel} onChange={(e) => update({ showFuel: e.target.checked })} />
+          </label>
+          {cfg.showFuel && <>
           <label className="flex items-center justify-between">Typical consumption (L/100 km)
             <input type="number" step="0.1" inputMode="decimal" className={inputCls} value={cfg.ratedL100} disabled={on}
               onChange={(e) => update({ ratedL100: parseFloat(e.target.value) || 0 })} />
@@ -157,6 +171,7 @@ export default function EngineLoadGauge({ speedKmh }) {
               {cfg.fills < 2 ? ' – estimates firm up after 2–3 fill-ups.' : '.'}
             </p>
           </div>
+          </>}
           <p className="text-slate-500">Audio is analysed on the phone and never recorded or uploaded. Best placement: car – dash/console mount;
             motorcycle – tank bag or jacket pocket (out of the wind).</p>
         </div>
