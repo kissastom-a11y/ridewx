@@ -1,12 +1,15 @@
 /* RideWX service worker
- * - App shell: cache-first (works offline once loaded).
+ * - Pages (index.html / navigations): NETWORK-FIRST, cache only as offline fallback.
+ *   (v3 served a cached index.html first; after an update it pointed at JS files
+ *   that no longer existed → blank page. Never again.)
+ * - Hashed build files (assets/*): cache-first – their names change on every build.
  * - cameras.geojson: stale-while-revalidate (alerts keep working with no signal).
  * - OSRM / Open-Meteo / Nominatim: network-only (forecasts must be fresh).
  * - OpenFreeMap vector tiles/fonts/sprites: runtime cache of what you've viewed
  *   (so areas you've ridden through still show with weak signal). No bulk download.
  * - TomTom traffic: network-only (live data).
  */
-const VERSION = 'ridewx-v3';
+const VERSION = 'ridewx-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg', './data/cameras.geojson'];
 const TILE_CACHE = 'ridewx-tiles';
 const MAX_TILES = 1500;
@@ -49,6 +52,19 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  if (url.origin === self.location.origin && (e.request.mode === 'navigate' || url.pathname.endsWith('/index.html'))) {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          // Clone NOW, before the page consumes the body (cloning later fails silently).
+          if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put('./index.html', copy)); }
+          return res;
+        })
+        .catch(() => caches.match('./index.html')),
+    );
+    return;
+  }
+
   if (url.origin === self.location.origin) {
     if (url.pathname.endsWith('.geojson')) {
       e.respondWith(
@@ -62,7 +78,7 @@ self.addEventListener('fetch', (e) => {
     }
     e.respondWith(
       caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-        if (res.ok) caches.open(VERSION).then((c) => c.put(e.request, res.clone()));
+        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
         return res;
       }).catch(() => caches.match('./index.html'))),
     );
