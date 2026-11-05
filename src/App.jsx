@@ -17,7 +17,12 @@ import { useGeolocation } from './hooks/useGeolocation.js';
 import { useWakeLock } from './hooks/useWakeLock.js';
 import { useCompass, fuseHeading, requestCompassPermission } from './hooks/useCompass.js';
 import { useStoredState } from './lib/storage.js';
+import { locateOnTrack } from './lib/track.js';
+import RoadSummary from './features/roadInfo/RoadSummary.jsx';
+import RoadAlert from './features/roadInfo/RoadAlert.jsx';
+import { useRoadAlerts } from './features/roadInfo/useRoadAlerts.js';
 
+const NO_CAMS = [];
 const fab = 'flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-lg text-slate-800 shadow-lg active:bg-slate-200';
 
 export default function App() {
@@ -40,7 +45,8 @@ export default function App() {
   const [startTime, setStartTime] = useState(nowLocal());
   const [lastPlan, setLastPlan] = useState(null); // { from: place|null, to: place } for "Save route"
   const [routeSaved, setRouteSaved] = useState(false);
-  const [editRoute, setEditRoute] = useState(false); // show search boxes while a route is displayed
+  const [editRoute, setEditRoute] = useState(false);
+  const [avoidTolls, setAvoidTolls] = useStoredState('ridewx.avoidTolls', false); // show search boxes while a route is displayed
 
   // Location is requested as soon as the app opens (that's when the browser asks permission).
   const { position, error: gpsError } = useGeolocation({
@@ -55,17 +61,38 @@ export default function App() {
   const fused = fuseHeading(position, riding && simulate ? null : compass);
   const enableCompass = () => { if (!compassOn) requestCompassPermission().then((ok) => ok && setCompassOn(true)); };
   const wind = useLiveWind(riding ? position : null);
-  const { cameras, active } = useCameraProximity(riding ? position : null, { muted });
+  const osmCams = rw.roadInfo?.cameras ?? NO_CAMS; // stable reference – avoids re-render loops
+  const { cameras, active } = useCameraProximity(riding ? position : null, { muted, extra: osmCams });
+
+  // Where am I along the planned route? (null if no route or > 150 m off it)
+  const progressM = useMemo(() => {
+    if (!rw.track || !position) return null;
+    const loc = locateOnTrack(rw.track, position.lat, position.lon);
+    return loc && loc.off < 150 ? loc.distM : null;
+  }, [rw.track, position]);
+
+  // Cameras ON the route: OSM ones + our own dataset's that sit within 60 m of it.
+  const routeCameras = useMemo(() => {
+    if (!rw.track) return [];
+    const local = cameras.filter((c) => !String(c.id).startsWith('osm-')).map((c) => {
+      const loc = locateOnTrack(rw.track, c.lat, c.lon);
+      return loc && loc.off <= 60 ? { ...c, distM: loc.distM } : null;
+    }).filter(Boolean);
+    return [...osmCams, ...local].sort((a, b) => a.distM - b.distM);
+  }, [rw.track, osmCams, cameras]);
+
+  const roadAlert = useRoadAlerts({ progress: progressM, roadInfo: rw.roadInfo, riding, muted });
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
 
   const myLocation = position ? { lat: position.lat, lon: position.lon, label: 'My location' } : null;
 
   /** Form value → something the planner understands: saved place, my location (null), or text to geocode. */
   const resolveVal = useCallback((v) => {
+    if (v && typeof v === 'object' && v.isMe) return myLocation ? { ...v, ...myLocation, name: 'My location' } : null; // live GPS position
     if (v && typeof v === 'object') return v;
     if (!v || !v.trim()) return null;
     return pl.findByName(v) || v.trim();
-  }, [pl]);
+  }, [pl, myLocation]);
 
   const asPoint = (v) => (v && typeof v === 'object' ? { lat: v.lat, lon: v.lon, label: v.label || v.name } : v);
 
@@ -77,15 +104,15 @@ export default function App() {
     if (!t) return;
     const origin = f ? asPoint(f) : myLocation;
     if (!origin) { setLocalErr('Your location isn\'t available yet – allow location access or type a start point.'); return; }
-    const res = await rw.plan({ from: origin, to: asPoint(t), startTime: when || nowLocal(), trafficKey: trafficKey || null });
+    const res = await rw.plan({ from: origin, to: asPoint(t), startTime: when || nowLocal(), trafficKey: trafficKey || null, avoidTolls });
     if (!res) return;
     // Remember both ends as place objects so the route can be saved & reversed.
     const toPlace = typeof t === 'object' ? t : { icon: '📍', name: t.split(',')[0], lat: res.destination.lat, lon: res.destination.lon, label: res.destination.label };
-    const fromPlace = !f ? null : typeof f === 'object' ? f : { icon: '📍', name: f.split(',')[0], lat: res.origin.lat, lon: res.origin.lon, label: res.origin.label };
+    const fromPlace = !f || f.isMe ? null : typeof f === 'object' ? f : { icon: '📍', name: f.split(',')[0], lat: res.origin.lat, lon: res.origin.lon, label: res.origin.label };
     setLastPlan({ from: fromPlace, to: toPlace });
     setEditRoute(false);
     pl.addRecent({ ...res.destination, name: toPlace.name });
-  }, [resolveVal, myLocation, rw, trafficKey, pl]);
+  }, [resolveVal, myLocation, rw, trafficKey, pl, avoidTolls]);
 
   const goTo = (dest) => {
     const place = { icon: dest.icon || '🕘', name: dest.name, lat: dest.lat, lon: dest.lon, label: dest.label };
@@ -102,7 +129,7 @@ export default function App() {
       if (!myLocation) { setLocalErr('Your location isn\'t available yet.'); return; }
     }
     const fromV = a || '';
-    const toV = b || { icon: '📍', name: 'My location', ...myLocation };
+    const toV = b || { icon: '📍', name: 'My location', isMe: true, ...myLocation };
     setFromVal(fromV);
     setToVal(toV);
     setStartTime(nowLocal());
@@ -110,7 +137,7 @@ export default function App() {
   };
 
   const swap = () => {
-    const f = fromVal || (myLocation ? { icon: '📍', name: 'My location', ...myLocation } : '');
+    const f = fromVal || (myLocation ? { icon: '📍', name: 'My location', isMe: true, ...myLocation } : '');
     setFromVal(toVal);
     setToVal(f);
     if (rw.route) runPlan(toVal, f, startTime); // already had a route → show the reverse straight away
@@ -150,16 +177,20 @@ export default function App() {
           activeIds={activeIds}
           position={position}
           heading={fused.heading}
+          track={rw.track}
+          roadInfo={rw.roadInfo}
+          routeCameras={routeCameras}
           follow={riding && follow}
           onUserPan={() => setFollow(false)}
           focus={focus}
           theme={theme}
           traffic={trafficKey && showTraffic ? trafficKey : null}
         />
-        {riding && <CameraAlert active={active} />}
+        {riding && (active.length ? <CameraAlert active={active} />
+          : <RoadAlert alert={roadAlert} distance={roadAlert && progressM != null ? roadAlert.at - progressM : null} />)}
 
         {/* Floating buttons */}
-        <div className="absolute right-3 top-1/4 z-[900] flex flex-col gap-2">
+        <div className="absolute right-3 top-32 z-[900] flex flex-col gap-2">
           <button className={fab} onClick={() => setTheme(theme === 'day' ? 'night' : 'day')} title="Day / night map">
             {theme === 'day' ? '🌙' : '☀️'}
           </button>
@@ -203,6 +234,18 @@ export default function App() {
                   <button onClick={() => { rw.clear(); setLastPlan(null); setToVal(''); }} title="Close route"
                     className="w-11 rounded-lg bg-slate-800 ring-1 ring-slate-700">✕</button>
                 </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { const v = !avoidTolls; setAvoidTolls(v); }}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${avoidTolls ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 ring-1 ring-slate-700'}`}>
+                    💶 {avoidTolls ? 'Avoiding tolls' : 'Avoid tolls'}
+                  </button>
+                  {avoidTolls !== !!rw.route.avoidTolls && (
+                    <button onClick={() => runPlan(lastPlan?.from || '', lastPlan?.to, nowLocal())} className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold">
+                      ↻ Update route
+                    </button>
+                  )}
+                </div>
+                <RoadSummary route={rw.route} roadInfo={rw.roadInfo} cameraCount={routeCameras.length} />
                 <RouteWeatherPanel route={rw.route} waypoints={rw.waypoints} destName={lastPlan?.to?.name}
                   onSelect={(w) => setFocus({ ...w, zoom: 12, t: Date.now() })}
                   onStart={!riding ? () => startRide(false) : null} />
@@ -227,8 +270,12 @@ export default function App() {
                   onGoRoute={goRoute}
                   onRemoveRoute={pl.removeRoute}
                 />
+                <button onClick={() => setAvoidTolls(!avoidTolls)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${avoidTolls ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 ring-1 ring-slate-700'}`}>
+                  💶 {avoidTolls ? 'Avoiding tolls ✓' : 'Avoid tolls'}
+                </button>
                 <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
-                  onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} />
+                  onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} recents={pl.recents} />
                 {rw.route && editRoute && (
                   <button onClick={() => setEditRoute(false)} className="text-xs text-slate-400 underline">← Back to current route</button>
                 )}
@@ -259,7 +306,8 @@ export default function App() {
                 <button onClick={() => setMuted((m) => !m)} className="rounded-lg bg-slate-700 px-3 text-sm">{muted ? '🔇' : '🔊'}</button>
               </div>
             )}
-            <RideAhead waypoints={rw.waypoints} profile={rw.profile} spots={rw.spots} route={rw.route} position={position} />
+            <RideAhead waypoints={rw.waypoints} profile={rw.profile} spots={rw.spots} route={rw.route} position={position}
+              progressM={progressM} roadInfo={rw.roadInfo} routeCameras={routeCameras} />
             {riding && (
               <CrosswindIndicator wind={wind} heading={fused.heading} speedKmh={position?.speedKmh} headingSource={fused.source} />
             )}

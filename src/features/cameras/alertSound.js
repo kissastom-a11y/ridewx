@@ -50,3 +50,18 @@ export function playCameraAlert(cam) {
     setTimeout(() => window.speechSynthesis.speak(u), 700);
   }
 }
+
+/** Short two-tone chime + spoken message (tunnel / dirt-road warnings). */
+export function announce(text) {
+  if (ctx) {
+    const t = ctx.currentTime;
+    beep(660, t, 0.18);
+    beep(990, t + 0.22, 0.25);
+  }
+  navigator.vibrate?.([150, 80, 150]);
+  if ('speechSynthesis' in window) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    setTimeout(() => window.speechSynthesis.speak(u), 550);
+  }
+}

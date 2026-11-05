@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { HAZARD_COLORS, HAZARD_LABELS } from '../features/routeWeather/hazard.js';
 import { trafficFlowTiles, trafficIncidentTiles } from '../services/tomtom.js';
 import { weatherIcon } from '../features/routeWeather/weatherIcons.js';
+import { sliceTrack } from '../lib/track.js';
 
 export const MAP_STYLES = {
   day: 'https://tiles.openfreemap.org/styles/liberty',
@@ -41,12 +42,12 @@ function wpPopup(w) {
 }
 
 export default function MapView({
-  segments, waypoints, cameras, activeIds, position, heading = null, follow, onUserPan, focus, theme = 'day', traffic = null,
+  segments, waypoints, cameras, activeIds, position, heading = null, track = null, roadInfo = null, routeCameras = [], follow, onUserPan, focus, theme = 'day', traffic = null,
 }) {
   const el = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
-  const data = useRef({ route: EMPTY, wps: EMPTY, cams: EMPTY, rings: EMPTY });
+  const data = useRef({ route: EMPTY, wps: EMPTY, cams: EMPTY, rings: EMPTY, tunnels: EMPTY, unpaved: EMPTY });
   const trafficRef = useRef(traffic);
   const followRef = useRef(follow);
   const panRef = useRef(onUserPan);
@@ -57,6 +58,7 @@ export default function MapView({
   const posRef = useRef(position);
   posRef.current = position;
   const badges = useRef([]);
+  const roadBadges = useRef([]);
   trafficRef.current = traffic;
   followRef.current = follow;
   panRef.current = onUserPan;
@@ -82,6 +84,11 @@ export default function MapView({
       paint: { 'line-color': '#0b1220', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14], 'line-opacity': 0.55 } });
     m.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 9] } });
+    // Tunnels: dark dashed band on top of the route. Dirt/gravel: brown dashes.
+    m.addLayer({ id: 'unpaved-line', type: 'line', source: 'unpaved', layout: { 'line-cap': 'butt' },
+      paint: { 'line-color': '#92400e', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 9], 'line-dasharray': [1.2, 0.8] } });
+    m.addLayer({ id: 'tunnel-line', type: 'line', source: 'tunnels', layout: { 'line-cap': 'butt' },
+      paint: { 'line-color': '#111827', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 16, 11], 'line-opacity': 0.85, 'line-dasharray': [2, 1] } });
     m.addLayer({ id: 'rings-fill', type: 'fill', source: 'rings', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.12 } });
     m.addLayer({ id: 'rings-line', type: 'line', source: 'rings', paint: { 'line-color': '#ef4444', 'line-width': 1.5 } });
     m.addLayer({ id: 'cams', type: 'circle', source: 'cams',
@@ -212,6 +219,56 @@ export default function MapView({
       m.fitBounds(b, { padding: 50, bearing: 0, pitch: 0, duration: 800 });
     }
   }, [segments, waypoints]);
+
+  // ── road info: tunnels, dirt, cameras on the route ──
+  useEffect(() => {
+    roadBadges.current.forEach((b) => b.remove());
+    roadBadges.current = [];
+    const fc = (ranges) => ({
+      type: 'FeatureCollection',
+      features: track ? ranges.map((r) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: sliceTrack(track, r.from, r.to) } }))
+        .filter((f) => f.geometry.coordinates.length > 1) : [],
+    });
+    const tunnels = fc(roadInfo?.tunnels || []);
+    const unpaved = fc(roadInfo?.unpaved || []);
+    data.current.tunnels = tunnels;
+    data.current.unpaved = unpaved;
+    map.current?.getSource('tunnels')?.setData(tunnels);
+    map.current?.getSource('unpaved')?.setData(unpaved);
+    if (!track || !map.current) return;
+
+    const pill = (html, border, bg = '#fff', color = '#0f172a') => {
+      const el = document.createElement('div');
+      el.style.cssText = `display:flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;background:${bg};color:${color};` +
+        `border:2px solid ${border};box-shadow:0 2px 6px rgba(0,0,0,.35);font:700 12px system-ui;white-space:nowrap;cursor:pointer`;
+      el.innerHTML = html;
+      return el;
+    };
+    const at = (d) => track.pts.reduce((a, p) => (Math.abs(p.distM - d) < Math.abs(a.distM - d) ? p : a), track.pts[0]);
+    const add = (el, lngLat, popup, anchor = 'bottom') => {
+      const mk = new maplibregl.Marker({ element: el, anchor, offset: [0, -4] }).setLngLat(lngLat);
+      if (popup) mk.setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setText(popup));
+      mk.addTo(map.current);
+      roadBadges.current.push(mk);
+    };
+    for (const t of roadInfo?.tunnels || []) {
+      const p = at(t.from);
+      add(pill(`🚇 ${t.lengthM >= 1000 ? (t.lengthM / 1000).toFixed(1) + ' km' : Math.round(t.lengthM) + ' m'}`, '#111827', '#111827', '#fff'),
+        [p.lon, p.lat], `Tunnel${t.name ? ' ' + t.name : ''} – ${Math.round(t.lengthM)} m. Lights on!`);
+    }
+    for (const u of roadInfo?.unpaved || []) {
+      const p = at(u.from);
+      add(pill(`🟤 ${(u.lengthM / 1000).toFixed(1)} km`, '#92400e', '#fef3c7', '#78350f'), [p.lon, p.lat], `Unpaved (${u.surface}) for ${(u.lengthM / 1000).toFixed(1)} km`);
+    }
+    // Speed-camera signs: red-ringed speed-limit disc (or 📷 when the limit is unknown).
+    for (const c of routeCameras) {
+      const el = document.createElement('div');
+      el.style.cssText = 'display:flex;align-items:center;gap:2px;cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))';
+      el.innerHTML = `<div style="width:30px;height:30px;border-radius:50%;background:#fff;border:4px solid #dc2626;display:flex;align-items:center;justify-content:center;font:800 12px system-ui;color:#0f172a">${c.maxspeed || '📷'}</div>` +
+        (c.maxspeed ? '<div style="font-size:15px">📷</div>' : '');
+      add(el, [c.lon, c.lat], `${c.name || 'Speed camera'}${c.maxspeed ? ` – limit ${c.maxspeed}` : ''}`, 'center');
+    }
+  }, [track, roadInfo, routeCameras]);
 
   // ── cameras ──
   useEffect(() => {

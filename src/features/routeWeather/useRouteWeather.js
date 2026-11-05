@@ -5,7 +5,9 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { geocode } from '../../services/geocode.js';
-import { fetchRoute } from '../../services/osrm.js';
+import { fetchRoute, classRanges } from '../../services/osrm.js';
+import { fetchRoadInfo } from '../../services/roadInfo.js';
+import { buildTrack, locateOnTrack } from '../../lib/track.js';
 import { fetchRouteForecast } from '../../services/openMeteo.js';
 import { fetchTrafficSummary } from '../../services/tomtom.js';
 import { fetchElevations, exposureAt } from '../../services/elevation.js';
@@ -22,7 +24,7 @@ export function useRouteWeather() {
   const [state, setState] = useState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [] });
   const abortRef = useRef(null);
 
-  const plan = useCallback(async ({ from, to, startTime, trafficKey }) => {
+  const plan = useCallback(async ({ from, to, startTime, trafficKey, avoidTolls = false }) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -33,14 +35,30 @@ export function useRouteWeather() {
       // Nominatim policy: sequential, not parallel.
       const origin = await resolve(from, signal);
       const destination = await resolve(to, signal);
-      const route = await fetchRoute(origin, destination, { signal });
+      // Avoid tolls if asked. If no toll-free route exists, fall back and say so.
+      let route;
+      let avoidFailed = false;
+      try {
+        route = await fetchRoute(origin, destination, { signal, exclude: avoidTolls ? ['toll'] : [] });
+      } catch (e) {
+        if (!avoidTolls || e.name === 'AbortError') throw e;
+        route = await fetchRoute(origin, destination, { signal });
+        avoidFailed = true;
+      }
+      route.avoidTolls = avoidTolls;
+      route.avoidFailed = avoidFailed;
+
+      // Dense track (≈100 m) for matching things to the route, + toll/tunnel ranges from OSRM classes.
+      const track = buildTrack(route);
+      const classes = classRanges(route.intersections, (la, lo) => locateOnTrack(track, la, lo), route.distanceM);
+      route.tollKm = classes.toll.reduce((s, [a, b]) => s + (b - a), 0) / 1000;
 
       // Live traffic (optional): TomTom's traffic-aware time vs OSRM's free-flow
       // time gives a slow-down factor; we stretch every waypoint ETA by it so the
       // weather is fetched for when you'll REALLY be there.
       let traffic = null;
       if (trafficKey) {
-        const t = await fetchTrafficSummary(trafficKey, origin, destination, { signal });
+        const t = await fetchTrafficSummary(trafficKey, origin, destination, { signal, avoidTolls });
         if (t) traffic = { ...t, factor: Math.min(3, Math.max(1, t.travelS / Math.max(t.noTrafficS, 1))) };
       }
       const etaFactor = traffic?.factor ?? 1;
@@ -106,7 +124,19 @@ export function useRouteWeather() {
         segments.push({ points: pts, level: Math.max(a.hazard.level, b.hazard.level) });
       }
 
-      setState({ status: 'ready', error: null, route: { ...route, origin, destination, startUnix, traffic }, waypoints, segments, profile, spots });
+      setState({ status: 'ready', error: null, route: { ...route, origin, destination, startUnix, traffic }, waypoints, segments, profile, spots, track, classes,
+        roadInfo: { status: 'loading', unpaved: [], tunnels: classes.tunnel.map(([a, b]) => ({ from: a, to: b, lengthM: b - a, name: '' })), cameras: [] } });
+
+      // Road details from OpenStreetMap arrive a little later – don't hold up the weather.
+      fetchRoadInfo(track, { signal })
+        .then((info) => setState((s) => (s.track === track ? {
+          ...s,
+          roadInfo: { status: 'ready', ...info, tunnels: info.tunnels.length ? info.tunnels : s.roadInfo.tunnels },
+        } : s)))
+        .catch((e) => {
+          if (e.name === 'AbortError') return;
+          setState((s) => (s.track === track ? { ...s, roadInfo: { ...s.roadInfo, status: 'error' } } : s));
+        });
       return { origin, destination };
     } catch (err) {
       if (err.name === 'AbortError') return null;
@@ -117,7 +147,7 @@ export function useRouteWeather() {
 
   const clear = useCallback(() => {
     abortRef.current?.abort();
-    setState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [], spots: [] });
+    setState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [], spots: [], track: null, classes: null, roadInfo: null });
   }, []);
 
   return { ...state, plan, clear };

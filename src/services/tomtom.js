@@ -14,11 +14,12 @@ export const trafficIncidentTiles = (key) =>
  * Traffic-aware travel time for origin → destination.
  * Returns { travelS, noTrafficS, delayS } or null if anything fails (traffic is best-effort).
  */
-export async function fetchTrafficSummary(key, origin, destination, { signal, travelMode = 'car' } = {}) {
+export async function fetchTrafficSummary(key, origin, destination, { signal, travelMode = 'car', avoidTolls = false } = {}) {
   try {
     const url =
       `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lon}:${destination.lat},${destination.lon}/json` +
-      `?key=${encodeURIComponent(key)}&traffic=true&travelMode=${travelMode}&computeTravelTimeFor=all&routeRepresentation=summaryOnly`;
+      `?key=${encodeURIComponent(key)}&traffic=true&travelMode=${travelMode}&computeTravelTimeFor=all&routeRepresentation=summaryOnly` +
+      (avoidTolls ? '&avoid=tollRoads' : '');
     const res = await fetch(url, { signal });
     if (!res.ok) return null;
     const s = (await res.json()).routes?.[0]?.summary;

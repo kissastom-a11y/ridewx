@@ -189,3 +189,62 @@ describe('terrain exposure', () => {
     expect(exposureAt(profile, 2000).factor).toBe(1);
   });
 });
+
+import { buildTrack, locateOnTrack, mergeRanges } from '../src/lib/track.js';
+import { classRanges } from '../src/services/osrm.js';
+import { fetchRoadInfo } from '../src/services/roadInfo.js';
+
+describe('route track & road info', () => {
+  // straight 10 km route due north from 38.0, 23.0
+  const N = 101;
+  const coords = Array.from({ length: N }, (_, i) => ({ lat: 38 + (i * 100) / 111320, lon: 23 }));
+  const route = { coords, segDist: Array(N - 1).fill(100), segTime: Array(N - 1).fill(4), distanceM: 10000 };
+  const track = buildTrack(route);
+  const ptAt = (m, eastM = 0) => ({ lat: 38 + m / 111320, lon: 23 + eastM / (111320 * Math.cos((38 * Math.PI) / 180)) });
+
+  it('locates points along the route', () => {
+    const p = ptAt(4200, 10);
+    const loc = locateOnTrack(track, p.lat, p.lon);
+    expect(Math.abs(loc.distM - 4200)).toBeLessThanOrEqual(60);
+    expect(loc.off).toBeLessThan(15);
+  });
+  it('merges ranges', () => {
+    expect(mergeRanges([[0, 100], [180, 300], [1000, 1200]], 100)).toEqual([[0, 300], [1000, 1200]]);
+  });
+  it('turns OSRM intersection classes into toll/tunnel km ranges', () => {
+    const xs = [{ ...ptAt(0), classes: [] }, { ...ptAt(2000), classes: ['toll', 'motorway'] }, { ...ptAt(5000), classes: ['toll', 'tunnel'] }, { ...ptAt(5600), classes: [] }];
+    const r = classRanges(xs, (la, lo) => locateOnTrack(track, la, lo), 10000);
+    const tollKm = r.toll.reduce((s, [a, b]) => s + b - a, 0) / 1000;
+    expect(tollKm).toBeCloseTo(3.6, 1);
+    expect(r.tunnel).toHaveLength(1);
+  });
+  it('OSM matching: dirt stretch ON the route counts, a dirt road that only CROSSES does not', async () => {
+    const along = [ptAt(6000, 3), ptAt(6500, 2), ptAt(7000, 4), ptAt(7500, 1)];
+    const crossing = [ptAt(3000, -400), ptAt(3000, 0), ptAt(3000, 400)];
+    const cam = ptAt(8000, 15);
+    global.fetch = async () => ({ ok: true, json: async () => ({ elements: [
+      { type: 'way', id: 1, tags: { highway: 'unclassified', surface: 'gravel' }, geometry: along },
+      { type: 'way', id: 2, tags: { highway: 'track' }, geometry: crossing },
+      { type: 'node', id: 3, lat: cam.lat, lon: cam.lon, tags: { highway: 'speed_camera', maxspeed: '70' } },
+    ] }) });
+    const info = await fetchRoadInfo(track);
+    expect(info.unpaved).toHaveLength(1);
+    expect(info.unpaved[0].lengthM).toBeGreaterThan(1300);
+    expect(info.cameras).toHaveLength(1);
+    expect(info.cameras[0].maxspeed).toBe(70);
+    expect(Math.abs(info.cameras[0].distM - 8000)).toBeLessThan(80);
+  });
+});
+
+describe('track projection', () => {
+  it('a point on the road between two samples is ~0 m off and located exactly', () => {
+    const A = [37.98, 23.73], B = [38.20, 23.95], L = 31000, n = 120;
+    const P = (d) => { const f = d / L; return { lat: A[0] + (B[0] - A[0]) * f, lon: A[1] + (B[1] - A[1]) * f }; };
+    const coords = Array.from({ length: n }, (_, i) => P((L * i) / (n - 1)));
+    const t = buildTrack({ coords, segDist: Array(n - 1).fill(L / (n - 1)), segTime: Array(n - 1).fill(15), distanceM: L });
+    const p = P(18050);
+    const loc = locateOnTrack(t, p.lat, p.lon);
+    expect(loc.off).toBeLessThan(2);
+    expect(Math.abs(loc.distM - 18050)).toBeLessThan(25);
+  });
+});

@@ -28,10 +28,10 @@ export function WindGlyph({ rel, color, size = 22, speed = 20 }) {
   );
 }
 
-export default function RideAhead({ waypoints, profile, spots = [], route, position }) {
+export default function RideAhead({ waypoints, profile, spots = [], route, position, progressM = null, roadInfo = null, routeCameras = [] }) {
   // Where am I along the route? Nearest profile point (if within 1.5 km of the road).
-  const progress = useMemo(() => {
-    if (!position || !profile?.length) return null;
+  const fallbackProgress = useMemo(() => {
+    if (progressM != null || !position || !profile?.length) return null;
     let best = null;
     let bd = Infinity;
     for (const p of profile) {
@@ -39,11 +39,22 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
       if (d < bd) { bd = d; best = p; }
     }
     return bd < 1500 ? best.distM : null;
-  }, [position, profile]);
+  }, [position, profile, progressM]);
+  const progress = progressM ?? fallbackProgress;
 
   if (!route || !waypoints?.length) {
     return <p className="rounded-xl bg-slate-800/60 p-3 text-xs text-slate-400">Plan a route to see weather and wind on the road ahead.</p>;
   }
+
+  // "Next up": everything worth a glance, in road order.
+  const from = progress ?? -1;
+  const fmtIn = (d) => (progress == null ? `km ${(d / 1000).toFixed(0)}` : d - progress < 1000 ? `${Math.max(0, Math.round((d - progress) / 50) * 50)} m` : `${((d - progress) / 1000).toFixed(1)} km`);
+  const events = [
+    ...routeCameras.map((c) => ({ d: c.distM, icon: '📷', text: c.maxspeed ? `Camera · ${c.maxspeed}` : 'Camera', tone: '#fca5a5' })),
+    ...(roadInfo?.tunnels || []).map((t) => ({ d: t.from, icon: '🚇', text: `Tunnel ${t.lengthM >= 1000 ? (t.lengthM / 1000).toFixed(1) + ' km' : Math.round(t.lengthM) + ' m'} · lights`, tone: '#fde68a' })),
+    ...(roadInfo?.unpaved || []).map((u) => ({ d: u.from, icon: '🟤', text: `Dirt ${(u.lengthM / 1000).toFixed(1)} km`, tone: '#fcd34d' })),
+    ...spots.map((sp) => ({ d: sp.distM, icon: '⛰', text: `Crest · gusts ${sp.gusts}`, tone: sp.gusts >= 60 ? '#f87171' : '#fdba74' })),
+  ].filter((e) => e.d >= from).sort((a, b) => a.d - b.d).slice(0, 4);
 
   const ahead = waypoints.filter((w) => progress == null || w.distM >= progress - 500);
   const total = route.distanceM;
@@ -72,6 +83,20 @@ export default function RideAhead({ waypoints, profile, spots = [], route, posit
         <span>Road ahead</span>
         {progress != null && <span>{((total - progress) / 1000).toFixed(0)} km to go</span>}
       </div>
+
+      {events.length > 0 && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {events.map((e, i) => (
+            <div key={i} className="flex items-center gap-2 rounded-lg bg-slate-900/70 px-2 py-1.5">
+              <span className="text-xl">{e.icon}</span>
+              <div className="min-w-0 leading-tight">
+                <div className="text-sm font-bold tabular-nums text-white">{fmtIn(e.d)}</div>
+                <div className="truncate text-[11px]" style={{ color: e.tone }}>{e.text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {ahead.map((w, i) => (

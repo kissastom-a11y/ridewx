@@ -11,11 +11,12 @@ export function nowLocal() {
   return d.toISOString().slice(0, 16);
 }
 
+import PlaceInput from './PlaceInput.jsx';
+
 export const showVal = (v) => (v && typeof v === 'object' ? `${v.icon || '📍'} ${v.name}` : v || '');
 
-export default function RouteForm({ from, to, setFrom, setTo, startTime, setStartTime, onSubmit, onSwap, busy, places = [] }) {
+export default function RouteForm({ from, to, setFrom, setTo, startTime, setStartTime, onSubmit, onSwap, busy, places = [], recents = [] }) {
   const input = 'w-full rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none ring-1 ring-slate-700 focus:ring-sky-500';
-  const saved = places.filter((p) => p.lat != null);
 
   const submit = (e) => {
     e.preventDefault();
@@ -24,15 +25,10 @@ export default function RouteForm({ from, to, setFrom, setTo, startTime, setStar
 
   return (
     <form onSubmit={submit} className="grid gap-2">
-      <datalist id="saved-places">
-        {saved.map((p) => <option key={p.id} value={p.name} />)}
-      </datalist>
       <div className="flex items-stretch gap-2">
         <div className="grid flex-1 gap-2">
-          <input className={input} list="saved-places" placeholder="📍 From: my location (or type)" value={showVal(from)}
-            onChange={(e) => setFrom(e.target.value)} />
-          <input className={input} list="saved-places" placeholder="🏁 Where to? (e.g. Work)" value={showVal(to)}
-            onChange={(e) => setTo(e.target.value)} />
+          <PlaceInput className={input} placeholder="📍 From: my location (or type)" value={from} onChange={setFrom} places={places} recents={recents} />
+          <PlaceInput className={input} placeholder="🏁 Where to? (e.g. Work)" value={to} onChange={setTo} places={places} recents={recents} />
         </div>
         <button type="button" onClick={onSwap} title="Swap start and destination"
           className="w-11 shrink-0 rounded-lg bg-slate-800 text-xl text-slate-200 ring-1 ring-slate-700 active:bg-slate-700">⇅</button>
