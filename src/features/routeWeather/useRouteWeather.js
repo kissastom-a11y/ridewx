@@ -83,5 +83,10 @@ export function useRouteWeather() {
     }
   }, []);
 
-  return { ...state, plan };
+  const clear = useCallback(() => {
+    abortRef.current?.abort();
+    setState({ status: 'idle', error: null, route: null, waypoints: [], segments: [] });
+  }, []);
+
+  return { ...state, plan, clear };
 }

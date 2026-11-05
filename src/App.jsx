@@ -38,6 +38,7 @@ export default function App() {
   const [startTime, setStartTime] = useState(nowLocal());
   const [lastPlan, setLastPlan] = useState(null); // { from: place|null, to: place } for "Save route"
   const [routeSaved, setRouteSaved] = useState(false);
+  const [editRoute, setEditRoute] = useState(false); // show search boxes while a route is displayed
 
   // Location is requested as soon as the app opens (that's when the browser asks permission).
   const { position, error: gpsError } = useGeolocation({
@@ -75,6 +76,7 @@ export default function App() {
     const toPlace = typeof t === 'object' ? t : { icon: '📍', name: t.split(',')[0], lat: res.destination.lat, lon: res.destination.lon, label: res.destination.label };
     const fromPlace = !f ? null : typeof f === 'object' ? f : { icon: '📍', name: f.split(',')[0], lat: res.origin.lat, lon: res.origin.lon, label: res.origin.label };
     setLastPlan({ from: fromPlace, to: toPlace });
+    setEditRoute(false);
     pl.addRecent({ ...res.destination, name: toPlace.name });
   }, [resolveVal, myLocation, rw, trafficKey, pl]);
 
@@ -181,31 +183,50 @@ export default function App() {
 
         {tab === 'plan' && (
           <>
-            <PlacesBar
-              places={pl.places}
-              recents={pl.recents}
-              position={position}
-              onGo={goTo}
-              onSave={pl.savePlace}
-              onRemove={pl.removePlace}
-              onClearRecents={pl.clearRecents}
-              routes={pl.routes}
-              onGoRoute={goRoute}
-              onRemoveRoute={pl.removeRoute}
-            />
-            <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
-              onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} />
+            {rw.route && rw.status === 'ready' && !editRoute ? (
+              <>
+                <div className="flex gap-2 text-sm">
+                  <button onClick={() => setEditRoute(true)} className="flex-1 truncate rounded-lg bg-slate-800 px-3 py-2 text-left text-slate-200 ring-1 ring-slate-700">
+                    {showVal(lastPlan?.from) || '📍 My location'} → {showVal(lastPlan?.to)}
+                  </button>
+                  <button onClick={swap} title="Reverse" className="w-11 rounded-lg bg-slate-800 text-lg ring-1 ring-slate-700">⇅</button>
+                  <button onClick={() => { rw.clear(); setLastPlan(null); setToVal(''); }} title="Close route"
+                    className="w-11 rounded-lg bg-slate-800 ring-1 ring-slate-700">✕</button>
+                </div>
+                <RouteWeatherPanel route={rw.route} waypoints={rw.waypoints} destName={lastPlan?.to?.name}
+                  onSelect={(w) => setFocus({ ...w, zoom: 12, t: Date.now() })}
+                  onStart={!riding ? () => startRide(false) : null} />
+                {lastPlan && (
+                  <button disabled={routeSaved} onClick={() => { pl.saveRoute(lastPlan.from, lastPlan.to); setRouteSaved(true); }}
+                    className="w-full rounded-lg bg-slate-800 py-2 text-sm text-slate-200 ring-1 ring-slate-700 disabled:text-emerald-400">
+                    {routeSaved ? '✓ Saved to My routes' : '⭐ Save this route'}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <PlacesBar
+                  places={pl.places}
+                  recents={pl.recents}
+                  position={position}
+                  onGo={goTo}
+                  onSave={pl.savePlace}
+                  onRemove={pl.removePlace}
+                  onClearRecents={pl.clearRecents}
+                  routes={pl.routes}
+                  onGoRoute={goRoute}
+                  onRemoveRoute={pl.removeRoute}
+                />
+                <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
+                  onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} />
+                {rw.route && editRoute && (
+                  <button onClick={() => setEditRoute(false)} className="text-xs text-slate-400 underline">← Back to current route</button>
+                )}
+              </>
+            )}
             {rw.status === 'routing' && <p className="text-xs text-slate-400">Finding route{trafficKey ? ' + live traffic' : ''}…</p>}
             {rw.status === 'weather' && <p className="text-xs text-slate-400">Fetching weather for each point at your arrival time…</p>}
             {(rw.error || localErr) && <p className="text-xs text-red-400">{localErr || rw.error}</p>}
-            {rw.route && lastPlan && rw.status === 'ready' && (
-              <button disabled={routeSaved} onClick={() => { pl.saveRoute(lastPlan.from, lastPlan.to); setRouteSaved(true); }}
-                className="w-full rounded-lg bg-slate-800 py-2 text-sm text-slate-200 ring-1 ring-slate-700 disabled:text-emerald-400">
-                {routeSaved ? '✓ Saved to My routes' : `⭐ Save route: ${showVal(lastPlan.from) || '📍 My location'} → ${showVal(lastPlan.to)}`}
-              </button>
-            )}
-            <RouteWeatherPanel route={rw.route} waypoints={rw.waypoints} onSelect={(w) => setFocus({ ...w, t: Date.now() })}
-              onStart={rw.route && !riding ? () => startRide(false) : null} />
             <button onClick={() => setTrafficSetup(true)} className="text-xs text-slate-500 underline">
               {trafficKey ? 'Traffic settings' : 'Set up live traffic'}
             </button>

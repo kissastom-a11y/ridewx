@@ -11,6 +11,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { HAZARD_COLORS, HAZARD_LABELS } from '../features/routeWeather/hazard.js';
 import { trafficFlowTiles, trafficIncidentTiles } from '../services/tomtom.js';
+import { weatherIcon } from '../features/routeWeather/weatherIcons.js';
 
 export const MAP_STYLES = {
   day: 'https://tiles.openfreemap.org/styles/liberty',
@@ -50,6 +51,7 @@ export default function MapView({
   const followRef = useRef(follow);
   const panRef = useRef(onUserPan);
   const firstFix = useRef(true);
+  const badges = useRef([]);
   trafficRef.current = traffic;
   followRef.current = follow;
   panRef.current = onUserPan;
@@ -75,8 +77,6 @@ export default function MapView({
       paint: { 'line-color': '#0b1220', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14], 'line-opacity': 0.55 } });
     m.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 9] } });
-    m.addLayer({ id: 'wps', type: 'circle', source: 'wps',
-      paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
     m.addLayer({ id: 'rings-fill', type: 'fill', source: 'rings', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.12 } });
     m.addLayer({ id: 'rings-line', type: 'line', source: 'rings', paint: { 'line-color': '#ef4444', 'line-width': 1.5 } });
     m.addLayer({ id: 'cams', type: 'circle', source: 'cams',
@@ -100,13 +100,10 @@ export default function MapView({
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: false }), 'bottom-right');
     m.on('style.load', () => addOverlays(m));
     m.on('dragstart', (e) => { if (e.originalEvent) panRef.current?.(); });
-    m.on('click', 'wps', (e) => {
-      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.features[0].geometry.coordinates).setHTML(e.features[0].properties.html).addTo(m);
-    });
     m.on('click', 'cams', (e) => {
       new maplibregl.Popup({ closeButton: false }).setLngLat(e.features[0].geometry.coordinates).setText(e.features[0].properties.label).addTo(m);
     });
-    for (const l of ['wps', 'cams']) {
+    for (const l of ['cams']) {
       m.on('mouseenter', l, () => { m.getCanvas().style.cursor = 'pointer'; });
       m.on('mouseleave', l, () => { m.getCanvas().style.cursor = ''; });
     }
@@ -155,6 +152,28 @@ export default function MapView({
         properties: { color: HAZARD_COLORS[w.hazard.level], html: wpPopup(w) },
       })),
     };
+    // Weather badges (HTML markers: emoji + temperature) – visible without tapping.
+    // Thin them out on long trips so they don't overlap; always keep the destination.
+    badges.current.forEach((b) => b.remove());
+    badges.current = [];
+    const list = waypoints || [];
+    const step = list.length > 14 ? Math.ceil(list.length / 12) : 1;
+    list.forEach((w, i) => {
+      const last = i === list.length - 1;
+      if (!last && i % step !== 0) return;
+      const el = document.createElement('div');
+      const c = HAZARD_COLORS[w.hazard.level];
+      el.style.cssText = `display:flex;align-items:center;gap:3px;padding:${last ? '4px 9px' : '2px 7px'};border-radius:999px;` +
+        `background:#fff;border:2px solid ${c};box-shadow:0 2px 6px rgba(0,0,0,.35);font:600 ${last ? 14 : 12}px system-ui;color:#0f172a;cursor:pointer;white-space:nowrap`;
+      el.innerHTML = `${last ? '🏁 ' : ''}<span style="font-size:${last ? 18 : 15}px">${weatherIcon(w.weather.weatherCode, w.etaUnix)}</span>` +
+        `${Math.round(w.weather.temperature)}°${last ? ` <span style="font-weight:500;color:#475569">${fmtTime(w.etaUnix)}</span>` : ''}`;
+      const mk = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -6] })
+        .setLngLat([w.lon, w.lat])
+        .setPopup(new maplibregl.Popup({ maxWidth: '260px', offset: 18 }).setHTML(wpPopup(w)));
+      if (map.current) mk.addTo(map.current);
+      badges.current.push(mk);
+    });
+
     data.current.route = route;
     data.current.wps = wps;
     const m = map.current;
