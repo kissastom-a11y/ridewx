@@ -20,7 +20,7 @@ import { classifyHazard } from './hazard.js';
 export const WAYPOINT_INTERVAL_M = 12000; // spec: 10–15 km
 
 /** A place can be typed text (geocoded) or an already-known {lat, lon, label}. */
-const resolve = (x, signal) => (typeof x === 'string' ? geocode(x, { signal }) : Promise.resolve(x));
+const resolve = (x, signal, near) => (typeof x === 'string' ? geocode(x, { signal, near }) : Promise.resolve(x));
 
 export function useRouteWeather() {
   const [state, setState] = useState({ status: 'idle', error: null, route: null, waypoints: [], segments: [], profile: [] });
@@ -36,7 +36,7 @@ export function useRouteWeather() {
       setState((s) => ({ ...s, status: 'routing', error: null }));
       // Nominatim policy: sequential, not parallel.
       const origin = await resolve(from, signal);
-      const destination = await resolve(to, signal);
+      const destination = await resolve(to, signal, typeof origin === 'object' ? origin : null);
       // Avoid tolls if asked. If no toll-free route exists, fall back and say so.
       let route;
       let avoidFailed = false;

@@ -110,6 +110,9 @@ const EL = {
   'Time left': 'Απομένει',
   Distance: 'Απόσταση',
   'Open Spotify': 'Άνοιγμα Spotify',
+  'Searching…': 'Αναζήτηση…',
+  'No results': 'Κανένα αποτέλεσμα',
+  'Tip: add your free TomTom key (🚦) for better business search': 'Συμβουλή: βάλτε το δωρεάν κλειδί TomTom (🚦) για καλύτερη αναζήτηση καταστημάτων',
   // ── route results ──
   arrive: 'άφιξη',
   'no traffic delays': 'χωρίς καθυστερήσεις',

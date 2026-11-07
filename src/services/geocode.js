@@ -1,15 +1,28 @@
 /**
- * Free geocoding via OSM Nominatim. Usage policy: max 1 request/second, no
- * autocomplete-on-keystroke, cache results. We only geocode on form submit.
- * Accepts raw "lat, lon" input too, which skips the network entirely.
+ * Turn typed text into a place when the user presses Go without picking a
+ * suggestion. Order: raw "lat, lon" → the same search as the dropdown
+ * (TomTom / Photon, biased to where you are) → OSM Nominatim as last resort.
  */
+import { searchPlaces } from './placeSearch.js';
+
 const cache = new Map();
 
-export async function geocode(query, { signal } = {}) {
+export async function geocode(query, { signal, near = null } = {}) {
   const q = query.trim();
   const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (m) return { lat: +m[1], lon: +m[2], label: q };
   if (cache.has(q)) return cache.get(q);
+
+  try {
+    const [best] = await searchPlaces(q, { near, signal });
+    if (best) {
+      const out = { lat: best.lat, lon: best.lon, label: [best.name, best.sub].filter(Boolean).join(', ') };
+      cache.set(q, out);
+      return out;
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+  }
 
   const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { signal, headers: { 'Accept-Language': navigator.language || 'en' } });

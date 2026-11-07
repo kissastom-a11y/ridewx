@@ -316,6 +316,21 @@ export default function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const sc = useSpeechCommands(onVoice);
+
+  // Back from another app (Instagram, Viber…) mid-ride: phones pause web apps in the
+  // background, so on return we re-centre and immediately say the next instruction.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible' || !live.current.riding) return;
+      setFollow(true);
+      setTimeout(() => {
+        const g = live.current.guidance;
+        if (g?.next) say(instructionText(g.next, g.dist), { urgent: true });
+      }, 2500); // give GPS a moment to deliver a fresh fix
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
   const onMic = () => { unlockAudio(); enableCompass(); sc.start(); };
 
   const locate = () => {
@@ -370,7 +385,7 @@ export default function App() {
         )}
 
         {/* Floating buttons */}
-        <div className={`absolute right-3 z-[1100] flex flex-col gap-2 ${riding ? 'top-[44%] -translate-y-1/2' : 'top-32'}`}>
+        <div className={`absolute right-3 z-[1100] flex flex-col gap-2 ${riding ? 'top-[44%] -translate-y-1/2' : 'top-3'}`}>
           {speechCommandsSupported && (
             <button className={`${fab} ${sc.listening ? 'animate-pulse !bg-red-600 !text-white' : '!bg-sky-600 !text-white'}`} onClick={onMic} title="Voice command">🎤</button>
           )}
@@ -462,7 +477,7 @@ export default function App() {
                   💶 {t(avoidTolls ? 'Avoiding tolls ✓' : 'Avoid tolls')}
                 </button>
                 <RouteForm from={fromVal} to={toVal} setFrom={setFromVal} setTo={setToVal} startTime={startTime} setStartTime={setStartTime}
-                  onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} recents={pl.recents} />
+                  onSubmit={() => runPlan(fromVal, toVal, startTime)} onSwap={swap} busy={busy} places={pl.places} recents={pl.recents} near={myLocation} />
                 {rw.route && editRoute && (
                   <button onClick={() => setEditRoute(false)} className="text-xs text-slate-400 underline">{t('← Back to current route')}</button>
                 )}

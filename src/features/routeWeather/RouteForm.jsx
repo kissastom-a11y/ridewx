@@ -16,7 +16,7 @@ import PlaceInput from './PlaceInput.jsx';
 
 export const showVal = (v) => (v && typeof v === 'object' ? `${v.icon || '📍'} ${t(v.name)}` : v || '');
 
-export default function RouteForm({ from, to, setFrom, setTo, startTime, setStartTime, onSubmit, onSwap, busy, places = [], recents = [] }) {
+export default function RouteForm({ from, to, setFrom, setTo, startTime, setStartTime, onSubmit, onSwap, busy, places = [], recents = [], near = null }) {
   const input = 'w-full rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none ring-1 ring-slate-700 focus:ring-sky-500';
 
   const submit = (e) => {
@@ -28,8 +28,8 @@ export default function RouteForm({ from, to, setFrom, setTo, startTime, setStar
     <form onSubmit={submit} className="grid gap-2">
       <div className="flex items-stretch gap-2">
         <div className="grid flex-1 gap-2">
-          <PlaceInput className={input} placeholder={t('📍 From: my location (or type)')} value={from} onChange={setFrom} places={places} recents={recents} />
-          <PlaceInput className={input} placeholder={t('🏁 Where to? (e.g. Work)')} value={to} onChange={setTo} places={places} recents={recents} />
+          <PlaceInput className={input} placeholder={t('📍 From: my location (or type)')} value={from} onChange={setFrom} places={places} recents={recents} near={near} />
+          <PlaceInput className={input} placeholder={t('🏁 Where to? (e.g. Work)')} value={to} onChange={setTo} places={places} recents={recents} near={near} />
         </div>
         <button type="button" onClick={onSwap} title="Swap start and destination"
           className="w-11 shrink-0 rounded-lg bg-slate-800 text-xl text-slate-200 ring-1 ring-slate-700 active:bg-slate-700">⇅</button>
