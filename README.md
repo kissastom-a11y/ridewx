@@ -3,6 +3,24 @@
 Route weather · aviation-style crosswind · camera proximity alerts · acoustic engine load & fuel estimate.
 100 % free data: OpenStreetMap tiles, OSRM routing, Nominatim geocoding, Open-Meteo weather, local GeoJSON.
 
+## Second app: RideWX Watt (road cycling) – `bike.html`
+
+Same build, own home-screen icon (`bike.webmanifest`). Answers *"what watts do I need to make it in N minutes?"*
+and then coaches you live on the road.
+
+- **Plan**: from → via → to (FOSSGIS OSRM bicycle routing), Copernicus DEM elevation every ~40 m, smoothed
+  (σ 60 m) into a gradient profile; Open-Meteo forecast (wind, gusts, temp, humidity, pressure) at each point's ETA.
+- **Physics** (`src/lib/cyclingPower.js`, unit-tested): aero with apparent wind at rider height (log profile),
+  rolling, gravity, acceleration with wheel inertia, drivetrain losses, moist-air density moved to road height.
+  Speed is integrated every 5 m with kinetic energy, so descents carry you into the next rise.
+- **Two plans**: constant watts, and *smart pacing* (more on climbs/headwind, less on descents/tailwind, capped at
+  % FTP) – same arrival time, lower average power. NP, %FTP, zone, sustainability check, climb-by-climb targets.
+- **Live**: GPS → position on route → DEM gradient → live wind at the rider → estimated watts (3/10/30 s),
+  target watts here, watts needed from here for the target, ahead/behind schedule. Optional Bluetooth power meter
+  (Cycling Power Service, Chrome on Android/desktop). **Simulate** replays the plan at 1–20×.
+- **Customisable**: several riders, bike presets (Factor Ostro VAM 2 …), position, tyres/road, wind exposure,
+  manual CdA, pacing aggressiveness, coasting & descent speeds, stops – all saved on the phone.
+
 ## Run
 
 ```bash

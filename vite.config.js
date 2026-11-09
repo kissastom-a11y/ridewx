@@ -10,4 +10,6 @@ export default defineConfig({
   // context. localhost counts as secure; for testing on a phone over LAN use
   // `vite --host` behind an HTTPS tunnel, or deploy to any static HTTPS host.
   server: { port: 5173 },
+  // Two apps, one build: RideWX (index.html) and RideWX Watt for cycling (bike.html).
+  build: { rollupOptions: { input: { main: 'index.html', bike: 'bike.html' } } },
 });
