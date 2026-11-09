@@ -16,13 +16,24 @@ const CAR_OSRM = import.meta.env?.VITE_OSRM_URL || 'https://router.project-osrm.
 
 async function osrm(base, pts, signal) {
   const c = pts.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
-  const url = `${base}/route/v1/driving/${c}?overview=full&geometries=geojson&annotations=distance,duration`;
+  const url = `${base}/route/v1/driving/${c}?overview=full&geometries=geojson&annotations=distance,duration&steps=true`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`Routing HTTP ${res.status}`);
   const j = await res.json();
   if (j.code !== 'Ok' || !j.routes?.length) throw new Error(`Routing: ${j.message || j.code}`);
   const r = j.routes[0];
+  // Turn-by-turn maneuvers (step.name = the road you're on AFTER the maneuver).
+  const maneuvers = [];
+  for (const leg of r.legs) for (const st of leg.steps || []) {
+    const m = st.maneuver || {};
+    if (!m.location) continue;
+    maneuvers.push({ lon: m.location[0], lat: m.location[1], type: m.type, modifier: m.modifier, exit: m.exit, name: st.name || st.ref || '' });
+  }
+  // Intermediate "arrive" (at a via point) is not a real arrival – keep only the last one.
+  const lastArrive = maneuvers.map((m) => m.type).lastIndexOf('arrive');
+  const clean = maneuvers.filter((m, i) => (m.type === 'arrive' ? i === lastArrive : m.type === 'depart' ? i === 0 : true));
   return {
+    maneuvers: clean,
     coords: r.geometry.coordinates.map(([lon, lat]) => ({ lat, lon })),
     segDist: r.legs.flatMap((l) => l.annotation.distance),
     segTime: r.legs.flatMap((l) => l.annotation.duration),

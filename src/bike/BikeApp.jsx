@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useGuidance } from '../features/guidance/useGuidance.js';
+import ManeuverBanner from '../features/guidance/ManeuverBanner.jsx';
+import { openSpotify } from '../features/music/openSpotify.js';
+import { unlockAudio } from '../features/cameras/alertSound.js';
+import { say, V, setVoiceEnabled, instructionText } from '../lib/voice.js';
 import PlaceInput from '../features/routeWeather/PlaceInput.jsx';
 import { useStoredState } from '../lib/storage.js';
 import { useWakeLock } from '../hooks/useWakeLock.js';
@@ -108,10 +113,26 @@ export default function BikeApp() {
   useWakeLock(riding);
   useEffect(() => { if (riding && !startedAt && gps.position) setStartedAt(gps.position.timestamp); }, [riding, gps.position, startedAt]);
   const pm = usePowerMeter();
+  const [muted, setMuted] = useStoredState('bikewx.muted', false);
+  useEffect(() => { setVoiceEnabled(!muted); }, [muted]);
   const { live, cond, need } = useLiveRide({
     active: riding, position: gps.position, profile: data?.profile, pieces: calc?.pieces || [], sys,
     forecast: wxMode === 'manual' || !data?.weather ? [{ distM: 0, ...manual }] : data.weather, targetS, stopsS, startedAt, plan: calc?.smart, useForecastWind: simulate || wxMode === 'manual',
   });
+
+  const guidance = useGuidance({ riding, progress: live?.onRoute ? live.distM : null, guide: data?.guide, speedKmh: live?.speedKmh, muted });
+
+  // Off the route for 4 fixes in a row → spoken warning (at most every 30 s). The map shows the way back.
+  const offCount = useRef(0);
+  const lastOff = useRef(0);
+  useEffect(() => {
+    if (!riding || !live) return;
+    offCount.current = live.onRoute ? 0 : offCount.current + 1;
+    if (offCount.current >= 4 && Date.now() - lastOff.current > 30000 && live.off != null) {
+      lastOff.current = Date.now();
+      if (!muted) say('Βγήκατε από τη διαδρομή. Επιστρέψτε στη χαραγμένη διαδρομή.', { urgent: true });
+    }
+  }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = () => {
     const departUnix = Math.floor(new Date(depart).getTime() / 1000);
@@ -119,13 +140,21 @@ export default function BikeApp() {
   };
   const addVia = (p) => setForm((f) => ({ ...f, via: [...f.via, { icon: '📌', name: `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`, lat: p.lat, lon: p.lon }] }));
 
-  const start = (sim) => { setSimulate(sim); setStartedAt(null); setRiding(true); setTab('ride'); };
+  const start = (sim) => {
+    unlockAudio(); // must happen inside the tap (unlocks speech on iOS)
+    if (!muted) say(V().rideStart);
+    setSimulate(sim); setStartedAt(null); setRiding(true); setFollow(true); setTab('ride');
+  };
   const stop = () => { setRiding(false); setSimulate(false); };
 
   return (
     <div className="flex h-full flex-col bg-slate-950 text-slate-100" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <header className="flex items-center justify-between px-3 py-2">
         <div className="text-sm font-bold leading-tight">🚴 RideWX<br /><span className="text-sky-400">Watt</span></div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setMuted(!muted)} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800" title="Φωνή">{muted ? '🔇' : '🔊'}</button>
+          <button onClick={openSpotify} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1DB954] text-white" title="Spotify">🎵</button>
+        </div>
         <div className="flex gap-1 rounded-xl bg-slate-900 p-1 text-sm">
           {[['plan', 'Σχεδίαση'], ['ride', 'Ζωντανά'], ['set', 'Ρυθμίσεις']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} className={`rounded-lg px-2.5 py-1 ${tab === k ? 'bg-sky-600 text-white' : 'text-slate-300'}`}>{l}</button>
@@ -138,7 +167,7 @@ export default function BikeApp() {
           <PlanTab {...{ form, setForm, depart, setDepart, go, planner, data, calc, rider: rN, sys, wxMode, setWxMode, manual, setManual, addVia, start, targetS }} />
         )}
         {tab === 'ride' && (
-          <RideTab {...{ data, calc, live, cond, need, gps, riding, simulate, factor, setFactor, start, stop, pm, rider: rN, targetS, follow, setFollow, wxMode }} />
+          <RideTab {...{ guidance, muted, data, calc, live, cond, need, gps, riding, simulate, factor, setFactor, start, stop, pm, rider: rN, targetS, follow, setFollow, wxMode }} />
         )}
         {tab === 'set' && <SettingsTab {...{ rider, setRider, riders, setRiders, riderId: rider.id, setRiderId, sys }} />}
       </main>
@@ -283,6 +312,21 @@ function PlanTab({ form, setForm, depart, setDepart, go, planner, data, calc, ri
             </div>
           </div>
 
+          {data.guide?.length > 0 && (
+            <details className={card}>
+              <summary className="cursor-pointer text-xs uppercase tracking-wide text-slate-400">Οδηγίες διαδρομής ({data.guide.length} στροφές)</summary>
+              <ol className="mt-2 space-y-1 text-sm">
+                {data.guide.map((m, i) => (
+                  <li key={i} className="flex gap-2 border-t border-slate-800 pt-1">
+                    <span className="w-14 shrink-0 tabular-nums text-slate-400">{(m.distM / 1000).toFixed(1)} km</span>
+                    <span>{instructionText(m)}</span>
+                  </li>
+                ))}
+              </ol>
+              <div className="mt-2 text-[11px] text-slate-500">Στη διαδρομή οι οδηγίες λέγονται φωναχτά στα ελληνικά, όπως στο RideWX. Πάτα την πράσινη κάρτα για επανάληψη.</div>
+            </details>
+          )}
+
           <div className="flex gap-2">
             <button className={`${btn} flex-1 bg-emerald-600 text-white`} onClick={() => start(false)}>▶ Ξεκίνα (GPS)</button>
             <button className={`${btn} bg-slate-800 text-slate-200`} onClick={() => start(true)}>Προσομοίωση</button>
@@ -306,7 +350,7 @@ function Legend() {
 }
 
 /* ─────────────────────────── ΖΩΝΤΑΝΑ ─────────────────────────── */
-function RideTab({ data, calc, live, cond, need, gps, riding, simulate, factor, setFactor, start, stop, pm, rider, targetS, follow, setFollow, wxMode }) {
+function RideTab({ guidance, muted, data, calc, live, cond, need, gps, riding, simulate, factor, setFactor, start, stop, pm, rider, targetS, follow, setFollow, wxMode }) {
   if (!calc) return <div className="mt-10 text-center text-slate-400">Κάνε πρώτα Υπολογισμό στη Σχεδίαση.</div>;
   const measured = pm.watts;
   const shown = measured ?? live?.p3 ?? 0;
@@ -333,6 +377,17 @@ function RideTab({ data, calc, live, cond, need, gps, riding, simulate, factor, 
         </div>
       )}
       {gps.error && <div className="rounded-lg bg-red-900/40 p-2 text-sm text-red-200">{gps.error}</div>}
+      {riding && guidance?.next && (
+        <button type="button" className="sticky top-0 z-10 block h-[76px] w-full text-left"
+          onClick={() => !muted && say(instructionText(guidance.next, guidance.dist), { urgent: true, force: true })}>
+          <ManeuverBanner guidance={guidance} />
+          <span role="button" onClick={(e) => { e.stopPropagation(); openSpotify(); }}
+            className="absolute right-1 top-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#1DB954] text-2xl text-white shadow-lg">🎵</span>
+        </button>
+      )}
+      {riding && live && !live.onRoute && live.off != null && (
+        <div className="rounded-lg bg-amber-900/50 p-2 text-sm text-amber-200">⚠ Εκτός διαδρομής ({Math.round(live.off)} m) – ακολούθησε τη χρωματιστή γραμμή στον χάρτη.</div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <div className="col-span-2 rounded-2xl p-3 ring-1 ring-slate-800" style={{ background: `${zone.color}22` }}>

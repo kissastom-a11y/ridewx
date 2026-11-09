@@ -6,6 +6,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { geocode } from '../services/geocode.js';
 import { fetchBikeRoute, buildRouteProfile, fetchRouteWeather } from './services.js';
+import { isActionable } from '../features/guidance/guidance.js';
+import { locateOnTrack } from '../lib/track.js';
+import { makeTrack } from './useLiveRide.js';
 
 const here = () => new Promise((res, rej) => {
   if (!navigator.geolocation) return rej(new Error('Δεν υποστηρίζεται GPS'));
@@ -54,7 +57,13 @@ export function usePlanner() {
       let weather = null;
       let wxError = null;
       try { weather = await fetchRouteWeather(profile, etaAt, { signal }); } catch (e) { if (e.name === 'AbortError') throw e; wxError = e.message; }
-      setData({ stops, route, profile, weather, departUnix, wxError, at: Date.now() });
+      // Voice/turn guidance placed along the route (metres from start).
+      const track = makeTrack(profile);
+      const guide = (route.maneuvers || []).filter(isActionable).map((m) => ({
+        ...m,
+        distM: m.type === 'arrive' ? total : locateOnTrack(track, m.lat, m.lon)?.distM,
+      })).filter((m) => m.distM != null).sort((a, b) => a.distM - b.distM);
+      setData({ stops, route, profile, weather, guide, departUnix, wxError, at: Date.now() });
       setState({ status: 'ok', error: null, step: null });
     } catch (e) {
       if (e.name === 'AbortError') return;
