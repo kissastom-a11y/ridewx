@@ -1,0 +1,17 @@
+{
+  "name": "RideWX Watt – ποδήλατο",
+  "short_name": "RideWX Watt",
+  "description": "Watt για χρόνο-στόχο με υψομετρικό, κλίση και live άνεμο.",
+  "id": "./bike.html",
+  "start_url": "./bike.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -9,8 +9,8 @@
  *   (so areas you've ridden through still show with weak signal). No bulk download.
  * - TomTom traffic: network-only (live data).
  */
-const VERSION = 'ridewx-v5';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './data/cameras.geojson'];
+const VERSION = 'ridewx-v6';
+const SHELL = ['./', './index.html', './bike.html', './manifest.webmanifest', './bike.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './data/cameras.geojson'];
 const TILE_CACHE = 'ridewx-tiles';
 const MAX_TILES = 1500;
 
@@ -37,7 +37,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   // Live APIs: never serve stale weather/routes.
-  if (/open-meteo\.com|project-osrm\.org|nominatim\.openstreetmap\.org|tomtom\.com/.test(url.host)) return;
+  if (/open-meteo\.com|project-osrm\.org|routing\.openstreetmap\.de|photon\.komoot\.io|nominatim\.openstreetmap\.org|tomtom\.com/.test(url.host)) return;
 
   if (url.host === 'tiles.openfreemap.org' && !url.pathname.startsWith('/styles/')) {
     e.respondWith(
@@ -52,15 +52,18 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  if (url.origin === self.location.origin && (e.request.mode === 'navigate' || url.pathname.endsWith('/index.html'))) {
+  if (url.origin === self.location.origin && (e.request.mode === 'navigate' || url.pathname.endsWith('.html'))) {
+    // Two apps share this worker: cache each page under its OWN name
+    // (bike.html must never overwrite index.html in the cache, or vice versa).
+    const page = url.pathname.endsWith('/bike.html') ? './bike.html' : './index.html';
     e.respondWith(
       fetch(e.request)
         .then((res) => {
           // Clone NOW, before the page consumes the body (cloning later fails silently).
-          if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put('./index.html', copy)); }
+          if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(page, copy)); }
           return res;
         })
-        .catch(() => caches.match('./index.html')),
+        .catch(() => caches.match(page)),
     );
     return;
   }
