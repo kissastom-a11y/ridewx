@@ -15,18 +15,19 @@ import { useBikeGps } from './useBikeGps.js';
 import { useLiveRide } from './useLiveRide.js';
 import { usePowerMeter, bluetoothSupported } from './usePowerMeter.js';
 import BikeMap from './BikeMap.jsx';
+import CyclistScene, { WindDial, PowerGauge } from './CyclistScene.jsx';
 import ProfileChart from './ProfileChart.jsx';
 import { BIKES, SURFACES, DEFAULT_RIDER, DIRECTOR_ROUTE } from './presets.js';
 import { fmtDur, fmtKm, pct, compass8, windLabel, gradeColor, nowLocalInput } from './ui.js';
 
-const inp = 'w-full rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 focus:outline-none focus:ring-sky-500';
-const card = 'rounded-2xl bg-slate-900/80 p-3 ring-1 ring-slate-800';
-const btn = 'rounded-xl px-3 py-2 text-sm font-semibold active:scale-[.98]';
+const inp = 'w-full rounded-xl bg-slate-800 px-3 py-3 text-base text-slate-100 ring-1 ring-slate-700 focus:outline-none focus:ring-sky-500';
+const card = 'rounded-3xl bg-slate-900 p-4 ring-1 ring-slate-800';
+const btn = 'rounded-xl px-4 py-3 text-base font-semibold active:scale-[.98]';
 
 function Num({ label, value, onChange, step = 1, unit, min }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] text-slate-400">{label}{unit ? ` (${unit})` : ''}</span>
+      <span className="mb-1 block text-sm text-slate-400">{label}{unit ? ` (${unit})` : ''}</span>
       <input type="number" inputMode="decimal" className={inp} value={value} step={step} min={min}
         onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)} />
     </label>
@@ -35,7 +36,7 @@ function Num({ label, value, onChange, step = 1, unit, min }) {
 function Sel({ label, value, onChange, options }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] text-slate-400">{label}</span>
+      <span className="mb-1 block text-sm text-slate-400">{label}</span>
       <select className={inp} value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
@@ -44,8 +45,8 @@ function Sel({ label, value, onChange, options }) {
 }
 const Kpi = ({ v, l, c, big }) => (
   <div className="rounded-xl bg-slate-800/70 px-3 py-2">
-    <div className={`${big ? 'text-4xl' : 'text-2xl'} font-bold tabular-nums leading-tight`} style={c ? { color: c } : undefined}>{v}</div>
-    <div className="text-[11px] text-slate-400">{l}</div>
+    <div className={`${big ? 'text-5xl' : 'text-3xl'} font-extrabold tabular-nums leading-tight`} style={c ? { color: c } : undefined}>{v}</div>
+    <div className="text-sm text-slate-400">{l}</div>
   </div>
 );
 
@@ -149,20 +150,15 @@ export default function BikeApp() {
 
   return (
     <div className="flex h-full flex-col bg-slate-950 text-slate-100" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <header className="flex items-center justify-between px-3 py-2">
-        <div className="text-sm font-bold leading-tight">🚴 RideWX<br /><span className="text-sky-400">Watt</span></div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setMuted(!muted)} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800" title="Φωνή">{muted ? '🔇' : '🔊'}</button>
-          <button onClick={openSpotify} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1DB954] text-white" title="Spotify">🎵</button>
-        </div>
-        <div className="flex gap-1 rounded-xl bg-slate-900 p-1 text-sm">
-          {[['plan', 'Σχεδίαση'], ['ride', 'Ζωντανά'], ['set', 'Ρυθμίσεις']].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} className={`rounded-lg px-2.5 py-1 ${tab === k ? 'bg-sky-600 text-white' : 'text-slate-300'}`}>{l}</button>
-          ))}
+      <header className="flex items-center justify-between px-4 py-2">
+        <div className="text-lg font-extrabold">🚴 RideWX <span className="text-sky-400">Watt</span></div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setMuted(!muted)} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-800 text-xl" title="Φωνή">{muted ? '🔇' : '🔊'}</button>
+          <button onClick={openSpotify} className="flex h-11 w-11 items-center justify-center rounded-full bg-[#1DB954] text-xl text-white" title="Spotify">🎵</button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-3 pb-6">
+      <main className="flex-1 overflow-y-auto px-3 pb-4">
         {tab === 'plan' && (
           <PlanTab {...{ form, setForm, depart, setDepart, go, planner, data, calc, rider: rN, sys, wxMode, setWxMode, manual, setManual, addVia, start, targetS }} />
         )}
@@ -171,6 +167,15 @@ export default function BikeApp() {
         )}
         {tab === 'set' && <SettingsTab {...{ rider, setRider, riders, setRiders, riderId: rider.id, setRiderId, sys }} />}
       </main>
+
+      <nav className="grid grid-cols-3 border-t border-slate-800 bg-slate-950/95">
+        {[['plan', '🗺️', 'Σχεδίαση'], ['ride', '🚴', 'Ζωντανά'], ['set', '⚙️', 'Ρυθμίσεις']].map(([k, ic, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={`flex flex-col items-center gap-0.5 py-2.5 ${tab === k ? 'text-sky-400' : 'text-slate-400'}`}>
+            <span className={`text-2xl ${tab === k ? '' : 'opacity-70 grayscale'}`}>{ic}</span>
+            <span className={`text-sm ${tab === k ? 'font-bold' : ''}`}>{l}{k === 'ride' && riding ? ' ●' : ''}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
@@ -350,98 +355,163 @@ function Legend() {
 }
 
 /* ─────────────────────────── ΖΩΝΤΑΝΑ ─────────────────────────── */
+function effortMsg(diff, tgt) {
+  if (diff == null || tgt == null) return null;
+  const band = Math.max(8, tgt * 0.07);
+  if (diff > band) return { t: `Χαλάρωσε ${Math.round(diff)} W`, i: '▼', c: '#fdba74' };
+  if (diff < -band) return { t: `Ανέβασε ${Math.round(-diff)} W`, i: '▲', c: '#fde047' };
+  return { t: 'Στον στόχο', i: '✓', c: '#86efac' };
+}
+
+const Tile = ({ v, l, c, sub }) => (
+  <div className="rounded-2xl bg-slate-900 p-3 ring-1 ring-slate-800">
+    <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{l}</div>
+    <div className="mt-1 text-[34px] font-extrabold leading-none tabular-nums" style={c ? { color: c } : undefined}>{v}</div>
+    {sub && <div className="mt-1 text-sm text-slate-400">{sub}</div>}
+  </div>
+);
+
 function RideTab({ guidance, muted, data, calc, live, cond, need, gps, riding, simulate, factor, setFactor, start, stop, pm, rider, targetS, follow, setFollow, wxMode }) {
-  if (!calc) return <div className="mt-10 text-center text-slate-400">Κάνε πρώτα Υπολογισμό στη Σχεδίαση.</div>;
+  if (!calc) {
+    return (
+      <div className="mt-16 space-y-4 text-center">
+        <div className="text-6xl">🚴</div>
+        <div className="text-lg text-slate-300">Κάνε πρώτα <b>Υπολογισμό</b> στη Σχεδίαση.</div>
+      </div>
+    );
+  }
   const measured = pm.watts;
-  const shown = measured ?? live?.p3 ?? 0;
-  const zone = powerZone(shown / rider.ftp);
+  const watts = measured ?? live?.p3 ?? 0;
+  const pctFtp = watts / rider.ftp;
+  const zone = powerZone(pctFtp);
   const tgt = live?.target;
-  const diff = tgt != null ? shown - tgt : null;
+  const diff = tgt != null ? watts - tgt : null;
+  const msg = riding ? effortMsg(diff, tgt) : null;
   const w = live?.w;
+  const headKmh = live ? live.head * 3.6 : 0;
+  const crossKmh = live ? live.cross * 3.6 : 0;
+  const windWord = !live ? '–' : Math.abs(headKmh) < 2 ? (Math.abs(crossKmh) >= 2 ? 'Πλάγιος' : 'Άπνοια') : headKmh > 0 ? 'Κόντρα' : 'Πρίμα';
+
   return (
     <div className="space-y-3">
-      {!riding ? (
-        <div className="flex gap-2">
-          <button className={`${btn} flex-1 bg-emerald-600 text-white`} onClick={() => start(false)}>▶ Ξεκίνα (GPS)</button>
-          <button className={`${btn} bg-slate-800 text-slate-200`} onClick={() => start(true)}>Προσομοίωση</button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <button className={`${btn} bg-red-600 text-white`} onClick={stop}>■ Τέλος</button>
-          {simulate && (
-            <div className="flex gap-1 rounded-lg bg-slate-800 p-1 text-xs">
-              {[1, 5, 10, 20].map((f) => <button key={f} onClick={() => setFactor(f)} className={`rounded px-2 py-1 ${factor === f ? 'bg-slate-600' : ''}`}>{f}×</button>)}
-            </div>
-          )}
-          <label className="ml-auto flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> ακολούθηση</label>
-        </div>
-      )}
-      {gps.error && <div className="rounded-lg bg-red-900/40 p-2 text-sm text-red-200">{gps.error}</div>}
       {riding && guidance?.next && (
-        <button type="button" className="sticky top-0 z-10 block h-[76px] w-full text-left"
+        <button type="button" className="sticky top-0 z-20 block h-[76px] w-full text-left"
           onClick={() => !muted && say(instructionText(guidance.next, guidance.dist), { urgent: true, force: true })}>
           <ManeuverBanner guidance={guidance} />
           <span role="button" onClick={(e) => { e.stopPropagation(); openSpotify(); }}
             className="absolute right-1 top-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#1DB954] text-2xl text-white shadow-lg">🎵</span>
         </button>
       )}
+      {gps.error && <div className="rounded-xl bg-red-900/50 p-3 text-base text-red-200">{gps.error}</div>}
       {riding && live && !live.onRoute && live.off != null && (
-        <div className="rounded-lg bg-amber-900/50 p-2 text-sm text-amber-200">⚠ Εκτός διαδρομής ({Math.round(live.off)} m) – ακολούθησε τη χρωματιστή γραμμή στον χάρτη.</div>
+        <div className="rounded-xl bg-amber-900/60 p-3 text-base text-amber-100">⚠ Εκτός διαδρομής ({Math.round(live.off)} m) – ακολούθησε τη γραμμή στον χάρτη.</div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="col-span-2 rounded-2xl p-3 ring-1 ring-slate-800" style={{ background: `${zone.color}22` }}>
-          <div className="flex items-end justify-between">
-            <div>
-              <div className="text-6xl font-black tabular-nums leading-none" style={{ color: zone.color }}>{Math.round(shown)}<span className="text-2xl"> W</span></div>
-              <div className="mt-1 text-xs text-slate-300">{measured != null ? `μετρητής ${pm.name} · εκτίμηση ${Math.round(live?.p3 ?? 0)} W` : 'εκτίμηση (3″)'} · {zone.label} · {Math.round((shown / rider.ftp) * 100)}% FTP</div>
+      {/* ── WATT: the hero, coloured by effort zone ── */}
+      <div className="relative overflow-hidden rounded-3xl p-4 shadow-xl transition-colors duration-700"
+        style={{ background: `linear-gradient(135deg, ${zone.color}ee, ${zone.color}88 60%, #0f172a)` }}>
+        {riding && diff != null && diff > Math.max(15, tgt * 0.15) && <div className="pointer-events-none absolute inset-0 animate-pulse bg-white/10" />}
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wider text-white/80">Watt τώρα {measured != null ? '· μετρητής' : '· εκτίμηση'}</div>
+            <div className="flex items-baseline gap-1 text-white drop-shadow">
+              <span className="text-[92px] font-black leading-none tabular-nums">{Math.round(watts)}</span>
+              <span className="text-3xl font-bold">W</span>
             </div>
-            <div className="text-right">
-              <div className="text-[11px] text-slate-400">στόχος εδώ</div>
-              <div className="text-3xl font-bold tabular-nums text-sky-300">{tgt != null ? Math.round(tgt) : '–'}</div>
-              {diff != null && <div className={`text-sm font-semibold ${Math.abs(diff) < 10 ? 'text-emerald-400' : diff > 0 ? 'text-orange-400' : 'text-yellow-300'}`}>{diff > 0 ? '+' : ''}{Math.round(diff)} W</div>}
-            </div>
+            <div className="mt-1 inline-block rounded-full bg-black/30 px-3 py-1 text-sm font-bold text-white">{zone.label} · {Math.round(pctFtp * 100)}% FTP</div>
+          </div>
+          <div className="text-right text-white">
+            <div className="text-sm font-semibold uppercase tracking-wider text-white/80">Στόχος</div>
+            <div className="text-5xl font-black tabular-nums leading-none">{tgt != null ? Math.round(tgt) : '–'}</div>
+            <div className="text-sm text-white/80">W εδώ</div>
           </div>
         </div>
-        <Kpi v={need?.watts != null ? `${Math.round(need.watts)} W` : '–'} l={need ? (need.feasible ? 'χρειάζεσαι σταθερά από εδώ' : 'δεν βγαίνει πια ο στόχος') : 'χρειάζεσαι από εδώ'} c={need && !need.feasible ? '#ef4444' : '#38bdf8'} />
-        <Kpi v={need ? `${need.deltaS > 0 ? '+' : '−'}${fmtDur(Math.abs(need.deltaS))}` : '–'} l={need ? `${need.deltaS > 0 ? 'πίσω' : 'μπροστά'} από το πλάνο · άφιξη ≈ ${fmtDur(need.projectedS)}` : 'σε σχέση με το πλάνο'} c={need ? (need.deltaS > 0 ? '#f97316' : '#22c55e') : undefined} />
-        <Kpi v={live ? live.speedKmh.toFixed(1) : '–'} l="km/h" />
-        <Kpi v={live ? pct(live.grade) : '–'} l={live?.gradeSrc === 'gps' ? 'κλίση (GPS, εκτός διαδρομής)' : 'κλίση (υψομετρικό)'} c={live ? gradeColor(live.grade) : undefined} />
-        <Kpi v={live ? windLabel(live.head) : '–'} l={live ? `πλάγιος ${Math.abs(live.cross * 3.6).toFixed(0)} km/h ${live.cross > 0 ? 'από δεξιά' : 'από αριστερά'}` : 'άνεμος'} />
-        <Kpi v={live ? fmtDur(live.elapsed) : '–'} l={`χρόνος / στόχος ${fmtDur(targetS)}`} />
-        <Kpi v={live ? fmtKm(Math.max(0, live.left)) : '–'} l={live ? `απομένουν · ↑ ${Math.round(live.climbLeft)} m` : 'απομένουν'} />
-        <Kpi v={live ? `${Math.round(live.avgPower)} W` : '–'} l="μέση ισχύς σε κίνηση" />
+        {msg && <div className="mt-3 rounded-xl bg-black/35 px-3 py-2 text-center text-2xl font-extrabold" style={{ color: msg.c }}>{msg.i} {msg.t}</div>}
+        <PowerGauge watts={watts} target={tgt} ftp={rider.ftp} />
       </div>
 
+      {/* ── the rider, wind and road ── */}
+      <div className="relative overflow-hidden rounded-3xl ring-1 ring-slate-800">
+        <CyclistScene speedKmh={live?.speedKmh ?? 0} power={riding ? watts : 0} grade={live?.grade ?? 0} headKmh={headKmh} color={zone.color} />
+        <div className="pointer-events-none absolute left-3 top-2 text-white">
+          <span className="text-5xl font-black tabular-nums">{live ? live.speedKmh.toFixed(1) : '0.0'}</span>
+          <span className="ml-1 text-lg font-semibold text-slate-300">km/h</span>
+        </div>
+        <div className="pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-1 text-2xl font-black tabular-nums text-slate-900"
+          style={{ background: gradeColor(live?.grade ?? 0) }}>{live ? pct(live.grade) : '0%'}</div>
+      </div>
+
+      <div className="flex items-center gap-3 rounded-3xl bg-slate-900 p-3 ring-1 ring-slate-800">
+        <WindDial relDeg={live?.rel ?? 0} windKmh={live?.uKmh ?? 0} headKmh={headKmh} crossKmh={crossKmh} size={130} />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Άνεμος σε σχέση με σένα</div>
+          <div className="text-3xl font-extrabold" style={{ color: headKmh > 2 ? '#f87171' : headKmh < -2 ? '#4ade80' : '#facc15' }}>{windWord}</div>
+          {live && (
+            <div className="mt-1 space-y-0.5 text-base text-slate-300">
+              <div>{headKmh >= 0 ? 'κόντρα' : 'πρίμα'} <b className="tabular-nums">{Math.abs(headKmh).toFixed(0)}</b> km/h</div>
+              <div>πλάγιος <b className="tabular-nums">{Math.abs(crossKmh).toFixed(0)}</b> km/h {Math.abs(crossKmh) >= 2 ? (crossKmh > 0 ? 'από δεξιά' : 'από αριστερά') : ''}</div>
+              {w && <div className="text-xs text-slate-500">{Math.round(w.windSpeed)} km/h από {compass8(w.windDirection)} στα 10 m · {simulate || wxMode === 'manual' ? 'πρόγνωση' : cond ? 'live' : '…'}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Tile l="Χρειάζεσαι" v={need?.watts != null ? `${Math.round(need.watts)} W` : '–'} c={need && !need.feasible ? '#ef4444' : '#38bdf8'}
+          sub={need ? (need.feasible ? 'σταθερά ως το τέλος' : 'ο στόχος δεν βγαίνει') : 'από εδώ ως το τέλος'} />
+        <Tile l="Πλάνο" v={need ? `${need.deltaS > 0 ? '+' : '−'}${fmtDur(Math.abs(need.deltaS))}` : '–'} c={need ? (need.deltaS > 0 ? '#f97316' : '#22c55e') : undefined}
+          sub={need ? `${need.deltaS > 0 ? 'πίσω' : 'μπροστά'} · άφιξη ${fmtDur(need.projectedS)}` : 'μπροστά / πίσω'} />
+        <Tile l="Χρόνος" v={live ? fmtDur(live.elapsed) : '0:00'} sub={`στόχος ${fmtDur(targetS)}`} />
+        <Tile l="Απομένουν" v={live ? fmtKm(Math.max(0, live.left)) : fmtKm(calc.total)} sub={live ? `↑ ${Math.round(live.climbLeft)} m ακόμα` : ''} />
+      </div>
+
+      {!riding ? (
+        <div className="grid grid-cols-3 gap-2">
+          <button className="col-span-2 rounded-2xl bg-emerald-600 py-5 text-xl font-extrabold text-white active:scale-[.98]" onClick={() => start(false)}>▶ Ξεκίνα</button>
+          <button className="rounded-2xl bg-slate-800 py-5 text-base font-bold text-slate-200 active:scale-[.98]" onClick={() => start(true)}>Προσομοίωση</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button className="rounded-2xl bg-red-600 px-6 py-4 text-lg font-extrabold text-white" onClick={stop}>■ Τέλος</button>
+          {simulate && (
+            <div className="flex flex-1 justify-between gap-1 rounded-2xl bg-slate-800 p-1 text-base">
+              {[1, 5, 10, 20].map((f) => <button key={f} onClick={() => setFactor(f)} className={`flex-1 rounded-xl py-3 ${factor === f ? 'bg-slate-600 font-bold' : ''}`}>{f}×</button>)}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className={card}>
+        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Υψομετρικό & watt πλάνου</div>
         <ProfileChart profile={data.profile} pieces={calc.pieces} plan={calc.smart} climbs={calc.climbs} atM={live?.distM ?? null} />
       </div>
 
-      <BikeMap profile={data.profile} stops={data.stops} position={gps.position} follow={follow} className="h-56 overflow-hidden rounded-2xl" />
+      <div className="relative">
+        <BikeMap profile={data.profile} stops={data.stops} position={gps.position} follow={follow} className="h-72 overflow-hidden rounded-3xl" />
+        <button onClick={() => setFollow(!follow)} className={`absolute bottom-3 left-3 rounded-full px-4 py-2 text-sm font-bold shadow-lg ${follow ? 'bg-sky-600 text-white' : 'bg-white text-slate-800'}`}>
+          {follow ? '◎ Ακολουθεί' : '◎ Ακολούθηση'}
+        </button>
+      </div>
 
       {live?.parts && (
         <div className={card}>
-          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">Πού πάνε τα watt τώρα</div>
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Πού πάνε τα watt τώρα</div>
           <Breakdown parts={live.parts} v={live.speedKmh / 3.6} eta={rider.eta} />
-          <div className="mt-2 text-[11px] text-slate-500">
-            Καιρός: {simulate || wxMode === 'manual' ? 'πρόγνωση/χειροκίνητος' : cond ? `live Open-Meteo ${new Date(cond.fetchedAt).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}` : 'φόρτωση…'}
-            {w && ` · ${Math.round(w.windSpeed)} km/h από ${compass8(w.windDirection)} · ${w.temperature?.toFixed(0)}° · ρ ${live.rho.toFixed(3)}`}
-            {!live.onRoute && live.off != null && ` · εκτός διαδρομής ${Math.round(live.off)} m`}
-          </div>
+          <div className="mt-2 text-xs text-slate-500">ρ αέρα {live.rho.toFixed(3)} kg/m³ · μέση ισχύς σε κίνηση {Math.round(live.avgPower)} W</div>
         </div>
       )}
 
       <div className={card}>
-        <div className="flex items-center justify-between">
-          <div className="text-sm">Μετρητής ισχύος Bluetooth</div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-base">Μετρητής ισχύος</div>
           {bluetoothSupported()
             ? (pm.status === 'on'
               ? <button className={`${btn} bg-slate-800`} onClick={pm.disconnect}>Αποσύνδεση {pm.name}</button>
-              : <button className={`${btn} bg-slate-800`} onClick={pm.connect}>{pm.status === 'connecting' ? 'Σύνδεση…' : 'Σύνδεση'}</button>)
-            : <span className="text-xs text-slate-500">μόνο Chrome σε Android/PC</span>}
+              : <button className={`${btn} bg-slate-800`} onClick={pm.connect}>{pm.status === 'connecting' ? 'Σύνδεση…' : 'Σύνδεση Bluetooth'}</button>)
+            : <span className="text-sm text-slate-500">μόνο Chrome σε Android</span>}
         </div>
-        {pm.error && <div className="mt-1 text-xs text-red-300">{pm.error}</div>}
-        <div className="mt-1 text-[11px] text-slate-500">Χωρίς μετρητή τα watt είναι εκτίμηση από ταχύτητα, επιτάχυνση, κλίση και άνεμο (±10–15%). Με μετρητή βλέπεις τα πραγματικά.</div>
+        {pm.error && <div className="mt-1 text-sm text-red-300">{pm.error}</div>}
+        <div className="mt-1 text-xs text-slate-500">Χωρίς μετρητή τα watt είναι εκτίμηση από ταχύτητα, επιτάχυνση, κλίση και άνεμο (±10–15%).</div>
       </div>
     </div>
   );

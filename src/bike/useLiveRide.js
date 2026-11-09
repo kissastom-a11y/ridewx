@@ -147,6 +147,7 @@ export function useLiveRide({ active, position, profile, pieces, sys, forecast, 
 
     setLive({
       distM, onRoute, off: loc?.off ?? null, grade, gradeSrc, elev, course, head, cross, rho, w,
+      rel: ((((w.windDirection ?? 0) - course) % 360) + 540) % 360 - 180, uKmh: u * 3.6,
       speedKmh: position.speedKmh, power: est.current.power, p3: est.current.p3, p10: est.current.p10, p30: est.current.p30,
       parts: est.current.parts, elapsed, left: total - distM, idx,
       target: plan ? plan.powerAt(idx) : null,
